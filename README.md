@@ -17,9 +17,11 @@
 ## 🚀 快速开始
 ### 1. 克隆仓库
 git clone https://github.com/Grass114/PixelCraft.git
+
 cd PixelCraft
 ### 2.安装依赖
 pip install -r requirements.txt
 ### 3.运行程序
 python pixel_craft.py
+
 -注：如果 tkinterdnd2 安装失败，程序会自动降级运行（仅失去拖拽功能，其他正常）。
