@@ -35,12 +35,14 @@ python pixel_craft.py
 -注：如果 tkinterdnd2 安装失败，程序会自动降级运行（仅失去拖拽功能，其他正常）。
 
 ## 打包为可执行文件
--Windows
+- Windows
 ```bash
+pip install pyinstaller
 pyinstaller --onefile --windowed --collect-all tkinterdnd2 --name PixelCraft pixel_craft.py
 ```
--Linux / macOS
+- Linux / macOS
 ```bash
+pip install pyinstaller
 pyinstaller --onefile --name PixelCraft pixel_craft.py
 ```
 打包后的文件在 dist 文件夹中，双击即可运行。
