@@ -32,3 +32,27 @@ python pixel_craft.py
 ```
 
 -注：如果 tkinterdnd2 安装失败，程序会自动降级运行（仅失去拖拽功能，其他正常）。
+
+## 打包为可执行文件
+-Windows
+```bash
+pyinstaller --onefile --windowed --collect-all tkinterdnd2 --name PixelCraft pixel_craft.py
+```
+-Linux / macOS
+```bash
+pyinstaller --onefile --name PixelCraft pixel_craft.py
+```
+打包后的文件在 dist 文件夹中，双击即可运行。
+
+## 使用 Makefile（推荐）
+```bash
+make install    # 安装依赖
+make build      # 打包
+make run        # 直接运行
+make clean      # 清理临时文件
+```
+
+如果你是Linux用户并且打开界面中文显示为方块，请安装中文字体：
+```bash
+sudo apt install fonts-noto-cjk fonts-wqy-microhei
+```
