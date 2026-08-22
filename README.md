@@ -4,6 +4,18 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 
+## ✨ 功能亮点
+
+- 🖱️ **拖拽或点击加载**：支持直接拖拽图片到窗口，或通过按钮选择
+- 📁 **批量处理 + 翻页浏览**：选择文件夹，逐张查看并调整参数
+- 🎛️ **实时自动转换**：调节滑块时自动生成像素画，无需手动点击
+- 🎨 **复古色盘预设**：内置 GameBoy、NES、CGA 等经典配色
+- ✏️ **像素画编辑器**：点击修改任意像素块，支持撤销/重做
+- 🔍 **图片缩放**：滚轮缩放 + 按钮控制 + 双击重置，原图和像素画同步
+- 📐 **预设尺寸**：一键切换 16×16 / 32×32 / 64×64
+- 💾 **保存导出**：支持导出 PNG / JPG 格式
+- 🖥️ **自适应窗口**：窗口自由缩放，图片始终居中显示
+
 ---
 ## 🚀 快速开始
 ### 1. 克隆仓库
