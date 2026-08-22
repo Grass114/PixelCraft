@@ -5,15 +5,6 @@
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 
 ---
-## ✨ 功能亮点
-- 🖱️ **拖拽或点击加载**：支持直接拖拽图片到窗口，或通过按钮选择
-- 🎛️ **实时自动转换**：调节滑块时自动生成像素画，无需手动点击
-- 🎨 **复古色盘预设**：内置 GameBoy、NES、CGA 等经典配色
-- 📐 **网格尺寸显示**：底部状态栏实时显示像素网格宽高
-- 💾 **保存导出**：支持导出 PNG / JPG 格式
-- 🖥️ **自适应窗口**：窗口自由缩放，图片始终居中显示
-
----
 ## 🚀 快速开始
 ### 1. 克隆仓库
 git clone https://github.com/Grass114/PixelCraft.git
