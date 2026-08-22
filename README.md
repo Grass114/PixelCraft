@@ -52,7 +52,7 @@ make run        # 直接运行
 make clean      # 清理临时文件
 ```
 
-如果你是Linux用户并且打开界面中文显示为方块，请安装中文字体：
+### 如果你是Linux用户并且打开界面中文显示为方块，请安装中文字体：
 ```bash
 sudo apt install fonts-noto-cjk fonts-wqy-microhei
 ```
