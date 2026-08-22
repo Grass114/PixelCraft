@@ -2,7 +2,11 @@
 from tkinter import ttk, filedialog, messagebox, colorchooser
 from PIL import Image, ImageDraw, ImageTk
 import os
+import threading
 import json
+import subprocess
+import platform
+from collections import Counter
 
 # 尝试导入拖拽支持
 try:
@@ -74,6 +78,9 @@ class PixelCraft:
         self.current_color = (255, 0, 0)
         self.edit_tool = "brush"
 
+        # ========== v1.3 新增：Linux 字体检测 ==========
+        self.check_linux_fonts()
+
         # 拖拽支持
         if HAS_DND and isinstance(root, TkinterDnD.Tk):
             root.drop_target_register('DND_Files')
@@ -81,6 +88,31 @@ class PixelCraft:
 
         self.setup_ui()
         self.update_status("拖拽图片或点击「选择图片」开始")
+
+    # ========== v1.3 新增：Linux 字体检测 ==========
+    def check_linux_fonts(self):
+        """检测 Linux 系统是否安装中文字体，缺失则弹窗提示"""
+        if platform.system() != "Linux":
+            return
+
+        try:
+            result = subprocess.run(
+                ["fc-list", ":lang=zh"],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            if not result.stdout.strip():
+                messagebox.showwarning(
+                    "字体缺失",
+                    "检测到系统缺少中文字体，界面可能显示为方块。\n\n"
+                    "请运行以下命令安装中文字体：\n"
+                    "sudo apt install fonts-noto-cjk fonts-wqy-microhei\n\n"
+                    "安装后重新启动程序即可正常显示。"
+                )
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            # fc-list 不存在或超时，静默跳过
+            pass
 
     # ========== UI 布局 ==========
     def setup_ui(self):
@@ -130,6 +162,8 @@ class PixelCraft:
         self.block_scale = tk.Scale(param, from_=2, to=40, orient=tk.HORIZONTAL,
                                     variable=self.block_var, length=100, showvalue=0)
         self.block_scale.pack(side=tk.LEFT, padx=(0, 5))
+        # ========== v1.3 新增：滑块滚轮支持 ==========
+        self.block_scale.bind("<MouseWheel>", lambda e: self.on_scale_wheel(e, self.block_scale, self.block_var, self.block_label, self.on_block_changed))
         self.block_label = tk.Label(param, text="12", width=3)
         self.block_label.pack(side=tk.LEFT, padx=(0, 10))
         self.block_scale.config(command=lambda v: (self.block_label.config(text=v), self.on_block_changed()))
@@ -139,6 +173,8 @@ class PixelCraft:
         self.color_scale = tk.Scale(param, from_=2, to=64, orient=tk.HORIZONTAL,
                                     variable=self.color_var, length=100, showvalue=0)
         self.color_scale.pack(side=tk.LEFT, padx=(0, 5))
+        # ========== v1.3 新增：滑块滚轮支持 ==========
+        self.color_scale.bind("<MouseWheel>", lambda e: self.on_scale_wheel(e, self.color_scale, self.color_var, self.color_label, self.on_block_changed))
         self.color_label = tk.Label(param, text="16", width=3)
         self.color_label.pack(side=tk.LEFT, padx=(0, 10))
         self.color_scale.config(command=lambda v: (self.color_label.config(text=v), self.on_block_changed()))
@@ -194,6 +230,22 @@ class PixelCraft:
         self.status.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(10, 0))
 
         self.load_config()
+
+    # ========== v1.3 新增：滑块滚轮支持 ==========
+    def on_scale_wheel(self, event, scale_widget, var, label, callback):
+        """滑块滚轮滚动处理"""
+        delta = 1 if event.delta > 0 else -1
+        new_val = var.get() + delta
+        from_val = int(scale_widget.cget("from"))
+        to_val = int(scale_widget.cget("to"))
+        if new_val < from_val:
+            new_val = from_val
+        if new_val > to_val:
+            new_val = to_val
+        var.set(new_val)
+        label.config(text=str(new_val))
+        callback()
+        return "break"  # 阻止事件冒泡到画布
 
     # ========== 缩放功能 ==========
     def on_mousewheel(self, event):
@@ -678,13 +730,17 @@ class PixelCraft:
         self.edit_window.destroy()
         self.edit_window = None
 
-    # ========== 保存图片 ==========
+    # ========== v1.3 更新：保存图片（增加 BMP 支持） ==========
     def save_image(self):
         if self.result_image is None:
             return
         path = filedialog.asksaveasfilename(
             defaultextension=".png",
-            filetypes=[("PNG图片", "*.png"), ("JPEG图片", "*.jpg")]
+            filetypes=[
+                ("PNG图片", "*.png"),
+                ("JPEG图片", "*.jpg"),
+                ("BMP图片", "*.bmp")
+            ]
         )
         if path:
             try:
