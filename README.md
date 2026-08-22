@@ -53,3 +53,17 @@ make build      # 打包
 make run        # 直接运行
 make clean      # 清理临时文件
 ```
+### Linux 使用源码运行
+```bash
+# 1. 安装依赖
+sudo apt update
+sudo apt install python3 python3-pip python3-tk
+pip3 install Pillow
+
+# 2. 克隆或下载源码
+git clone https://github.com/Grass114/PixelCraft.git
+cd PixelCraft
+
+# 3. 运行
+python3 pixel_craft.py
+```
