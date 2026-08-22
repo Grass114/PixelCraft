@@ -15,14 +15,18 @@
 - 💾 **保存导出**：支持导出 PNG / JPG 格式
 - 🖥️ **自适应窗口**：窗口自由缩放，图片始终居中显示
 
-## 🚀 快速开始
 ### 1. 克隆仓库
+```bash
 git clone https://github.com/Grass114/PixelCraft.git
-
 cd PixelCraft
+```
 ### 2.安装依赖
+```bash
 pip install -r requirements.txt
+```
 ### 3.运行程序
+```bash
 python pixel_craft.py
+```
 
 -注：如果 tkinterdnd2 安装失败，程序会自动降级运行（仅失去拖拽功能，其他正常）。
