@@ -17,6 +17,7 @@
 - 🐧 **Linux 字体检测**：自动检测中文字体，缺失时弹窗提示
 - 🔄 **滑块滚轮支持**：滚轮直接调节参数，操作更快捷
 
+## 🚀 快速开始
 ### 1. 克隆仓库
 ```bash
 git clone https://github.com/Grass114/PixelCraft.git
@@ -52,7 +53,7 @@ make run        # 直接运行
 make clean      # 清理临时文件
 ```
 
-### 如果你是Linux用户并且打开界面中文显示为方块，请安装中文字体：
+### 如果你是 Linux 用户并且打开界面中文显示为方块，请安装中文字体：
 ```bash
 sudo apt install fonts-noto-cjk fonts-wqy-microhei
 ```
