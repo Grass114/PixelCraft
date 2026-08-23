@@ -10,8 +10,8 @@ source.exclude_dirs = tests, bin, __pycache__, .git
 
 version = 1.4.0
 
-# 使用 Kivy 2.1.0 稳定版本
-requirements = python3==3.9.0,kivy==2.1.0,pillow==8.4.0
+# 不固定 Python 版本，使用 Kivy 2.1.0（稳定）
+requirements = python3,kivy==2.1.0,pillow==8.4.0
 
 orientation = portrait
 fullscreen = 0
