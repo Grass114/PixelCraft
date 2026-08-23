@@ -1,4 +1,4 @@
-[app]
+﻿[app]
 
 # (str) Title of your application
 title = PixelCraft
@@ -35,8 +35,8 @@ version = 1.4.0
 # version.filename = %(source.dir)s/main.py
 
 # (list) Application requirements
-# 固定版本号，避免兼容性问题
-requirements = python3==3.11.0,kivy==2.3.0,pillow==10.1.0
+# 移除固定版本号，避免下载失败
+requirements = python3,kivy==2.3.0,pillow==10.1.0
 
 # (str) Custom source folders for requirements
 # requirements.source.kivy = ../../kivy
@@ -106,7 +106,8 @@ android.minapi = 21
 android.sdk = 30
 
 # (str) Android NDK version to use
-android.ndk = 23b
+# 从 23b 升级到 28c（当前推荐版本）
+android.ndk = 28c
 
 # (bool) If True, then automatically accept SDK license
 android.accept_sdk_license = True
@@ -163,7 +164,7 @@ android.accept_sdk_license = True
 # android.copy_libs = 1
 
 # (str) The Android arch to build for, choices: armeabi-v7a, arm64-v8a, x86, x86_64
-# 改用 arm64-v8a（现代 Android 设备主流架构）
+# 使用 arm64-v8a（现代 Android 设备主流架构）
 android.arch = arm64-v8a
 
 #
