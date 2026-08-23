@@ -10,8 +10,8 @@ source.exclude_dirs = tests, bin, __pycache__, .git
 
 version = 1.4.0
 
-# 不指定具体版本，让环境自动选择兼容版本
-requirements = python3,kivy,pillow
+# 不固定 Python 版本，让 buildozer 使用当前环境的 Python 3.9
+requirements = python3,kivy==2.1.0,pillow
 
 orientation = portrait
 fullscreen = 0

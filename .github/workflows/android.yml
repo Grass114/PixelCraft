@@ -11,13 +11,16 @@ permissions:
 
 jobs:
   build-android:
-    runs-on: ubuntu-latest
-    container:
-      image: kivy/buildozer:latest
+    runs-on: ubuntu-20.04
 
     steps:
       - name: 检出代码
         uses: actions/checkout@v4
+
+      - name: 设置 Python 3.9
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.9'
 
       - name: 去除 buildozer.spec 的 BOM
         run: |
@@ -25,10 +28,25 @@ jobs:
             sed -i '1s/^\xEF\xBB\xBF//' buildozer.spec
           fi
 
-      - name: 构建 APK（自动回答 yes）
+      - name: 安装系统依赖
         run: |
-          export BUILDOZER_IGNORE_ROOT=1
-          yes | buildozer android debug
+          sudo apt update
+          sudo apt install -y git zip unzip openjdk-17-jdk \
+            python3-pip autoconf automake autoconf-archive \
+            libtool pkg-config zlib1g-dev \
+            libncurses5-dev libncursesw5-dev cmake \
+            libffi-dev libssl-dev \
+            libjpeg-dev libtiff-dev libwebp-dev \
+            m4
+
+      - name: 安装 buildozer 和 cython
+        run: |
+          pip3 install --user buildozer cython
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: 构建 APK
+        run: |
+          buildozer android debug
 
       - name: 上传 APK
         uses: actions/upload-artifact@v4
