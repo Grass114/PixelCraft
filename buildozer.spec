@@ -10,7 +10,6 @@ source.exclude_dirs = tests, bin, __pycache__, .git
 
 version = 1.4.0
 
-# 指定稳定版本，避免 Pillow 编译问题
 requirements = python3,kivy==2.3.0,pillow==9.5.0
 
 orientation = portrait
@@ -21,7 +20,7 @@ android.permissions = WRITE_EXTERNAL_STORAGE
 android.api = 30
 android.minapi = 21
 android.sdk = 30
-android.ndk = 25b          # 明确指定 NDK 25b
+# 不指定 android.ndk，让 buildozer 自动选择推荐版本（28c）
 android.accept_sdk_license = True
 android.arch = arm64-v8a
 android.enable_androidx = True

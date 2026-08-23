@@ -28,10 +28,9 @@ jobs:
             sed -i '1s/^\xEF\xBB\xBF//' buildozer.spec
           fi
 
-      - name: 清除旧的 NDK 缓存（避免版本冲突）
+      - name: 清除所有 NDK 缓存（避免残留）
         run: |
-          rm -rf ~/.buildozer/android/platform/android-ndk-r23b
-          rm -rf ~/.buildozer/android/platform/android-ndk-r25b
+          rm -rf ~/.buildozer/android/platform/android-ndk-*
 
       - name: 安装系统依赖
         run: |
