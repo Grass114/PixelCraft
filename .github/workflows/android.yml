@@ -28,6 +28,11 @@ jobs:
             sed -i '1s/^\xEF\xBB\xBF//' buildozer.spec
           fi
 
+      - name: 清除旧的 NDK 缓存（避免版本冲突）
+        run: |
+          rm -rf ~/.buildozer/android/platform/android-ndk-r23b
+          rm -rf ~/.buildozer/android/platform/android-ndk-r25b
+
       - name: 安装系统依赖
         run: |
           sudo apt update
@@ -54,7 +59,7 @@ jobs:
           name: PixelCraft-Android
           path: bin/*.apk
 
-      - name: 上传到 Release（如果打了 tag）
+      - name: 上传到 Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
