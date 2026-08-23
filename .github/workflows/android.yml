@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   build-android:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
 
     steps:
       - name: 检出代码
@@ -22,11 +22,17 @@ jobs:
         with:
           python-version: '3.11'
 
+      # ==================== 自动去除 BOM ====================
       - name: 去除 buildozer.spec 的 BOM
         run: |
           if [ -f buildozer.spec ]; then
+            # 方法1：使用 sed
             sed -i '1s/^\xEF\xBB\xBF//' buildozer.spec
+            # 方法2：使用 Python（备用）
+            python3 -c "import codecs; data=open('buildozer.spec','r',encoding='utf-8-sig').read(); open('buildozer.spec','w',encoding='utf-8').write(data)"
             echo "✅ BOM 已去除"
+          else
+            echo "⚠️ buildozer.spec 不存在"
           fi
 
       - name: 缓存 buildozer 依赖
@@ -45,7 +51,8 @@ jobs:
             libtool pkg-config zlib1g-dev \
             libncurses5-dev libncursesw5-dev cmake \
             libffi-dev libssl-dev \
-            libjpeg-dev libtiff-dev libwebp-dev
+            libjpeg-dev libtiff-dev libwebp-dev \
+            m4
 
       - name: 安装 buildozer 和 cython
         run: |
