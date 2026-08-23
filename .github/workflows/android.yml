@@ -11,72 +11,26 @@ permissions:
 
 jobs:
   build-android:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
+    container:
+      image: kivy/buildozer:latest
 
     steps:
       - name: 检出代码
         uses: actions/checkout@v4
 
-      - name: 设置 Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      # ==================== 自动去除 BOM ====================
-      - name: 去除 buildozer.spec 的 BOM
+      - name: 去除 BOM
         run: |
           if [ -f buildozer.spec ]; then
-            # 方法1：使用 sed
             sed -i '1s/^\xEF\xBB\xBF//' buildozer.spec
-            # 方法2：使用 Python（备用）
-            python3 -c "import codecs; data=open('buildozer.spec','r',encoding='utf-8-sig').read(); open('buildozer.spec','w',encoding='utf-8').write(data)"
-            echo "✅ BOM 已去除"
-          else
-            echo "⚠️ buildozer.spec 不存在"
           fi
-
-      - name: 缓存 buildozer 依赖
-        uses: actions/cache@v4
-        with:
-          path: ~/.buildozer
-          key: ${{ runner.os }}-buildozer-${{ hashFiles('buildozer.spec') }}
-          restore-keys: |
-            ${{ runner.os }}-buildozer-
-
-      - name: 安装系统依赖
-        run: |
-          sudo apt update
-          sudo apt install -y git zip unzip openjdk-17-jdk \
-            python3-pip autoconf automake autoconf-archive \
-            libtool pkg-config zlib1g-dev \
-            libncurses5-dev libncursesw5-dev cmake \
-            libffi-dev libssl-dev \
-            libjpeg-dev libtiff-dev libwebp-dev \
-            m4
-
-      - name: 构建 APK（减少日志输出）
-        run: |
-          export AUTOCONF_VERSION=2.69
-          export ACLOCAL_PATH=/usr/share/aclocal
-          buildozer android debug 2>&1 | grep -E "Error|ERROR|FAILED|Exception" -A 5 -B 5
 
       - name: 构建 APK
         run: |
-          export AUTOCONF_VERSION=2.69
-          export ACLOCAL_PATH=/usr/share/aclocal
-          export P4A_LOG_LEVEL=DEBUG
-          buildozer -v android debug
+          buildozer android debug
 
-      - name: 上传 APK（构建产物）
+      - name: 上传 APK
         uses: actions/upload-artifact@v4
         with:
           name: PixelCraft-Android
           path: bin/*.apk
-
-      - name: 上传到 Release（如果打了 tag）
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: bin/*.apk
-          draft: false
-          prerelease: false
