@@ -1,5 +1,4 @@
-﻿[app]
-
+[app]
 title = PixelCraft
 package.name = pixelcraft
 package.domain = com.grass114
@@ -11,7 +10,8 @@ source.exclude_dirs = tests, bin, __pycache__, .git
 
 version = 1.4.0
 
-requirements = python3,kivy==2.3.0,pillow==9.5.0
+# 只保留核心依赖，Pillow 会在编译时使用系统库
+requirements = python3,kivy,pillow
 
 orientation = portrait
 fullscreen = 0
@@ -25,6 +25,3 @@ android.ndk = 25b
 android.accept_sdk_license = True
 android.arch = arm64-v8a
 android.enable_androidx = True
-
-osx.python_version = 3
-osx.kivy_version = 2.3.0

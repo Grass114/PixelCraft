@@ -22,7 +22,6 @@ jobs:
         with:
           python-version: '3.11'
 
-      # ========== 🔥 关键：自动去除 BOM ==========
       - name: 去除 buildozer.spec 的 BOM
         run: |
           if [ -f buildozer.spec ]; then
@@ -40,22 +39,25 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-buildozer-
 
-      - name: 安装系统依赖
+      - name: 安装系统依赖（包含完整构建工具和图像库）
         run: |
           sudo apt update
           sudo apt install -y git zip unzip openjdk-17-jdk \
-            python3-pip autoconf libtool pkg-config zlib1g-dev \
+            python3-pip autoconf automake autoconf-archive \
+            libtool pkg-config zlib1g-dev \
             libncurses5-dev libncursesw5-dev cmake \
-            libffi-dev libssl-dev
+            libffi-dev libssl-dev \
+            libjpeg-dev libtiff-dev libwebp-dev
 
       - name: 安装 buildozer 和 cython
         run: |
           pip3 install --user buildozer cython
           echo "$HOME/.local/bin" >> $GITHUB_PATH
 
-      - name: 构建 APK
+      - name: 构建 APK（增加详细日志）
         run: |
-          buildozer android debug
+          export P4A_LOG_LEVEL=DEBUG
+          buildozer -v android debug
 
       - name: 上传 APK（构建产物）
         uses: actions/upload-artifact@v4
