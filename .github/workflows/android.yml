@@ -54,10 +54,11 @@ jobs:
             libjpeg-dev libtiff-dev libwebp-dev \
             m4
 
-      - name: 安装 buildozer 和 cython
+      - name: 构建 APK（减少日志输出）
         run: |
-          pip3 install --user buildozer cython
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          export AUTOCONF_VERSION=2.69
+          export ACLOCAL_PATH=/usr/share/aclocal
+          buildozer android debug 2>&1 | grep -E "Error|ERROR|FAILED|Exception" -A 5 -B 5
 
       - name: 构建 APK
         run: |
