@@ -1,4 +1,4 @@
-﻿[app]
+[app]
 
 # (str) Title of your application
 title = PixelCraft
