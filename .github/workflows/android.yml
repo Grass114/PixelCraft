@@ -22,6 +22,16 @@ jobs:
         with:
           python-version: '3.11'
 
+      # ========== 🔥 关键：自动去除 BOM ==========
+      - name: 去除 buildozer.spec 的 BOM
+        run: |
+          if [ -f buildozer.spec ]; then
+            sed -i '1s/^\xEF\xBB\xBF//' buildozer.spec
+            echo "✅ BOM 已去除"
+          else
+            echo "⚠️ buildozer.spec 不存在"
+          fi
+
       - name: 缓存 buildozer 依赖
         uses: actions/cache@v4
         with:
