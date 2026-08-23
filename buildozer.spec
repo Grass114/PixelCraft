@@ -7,7 +7,7 @@ title = PixelCraft
 package.name = pixelcraft
 
 # (str) Package domain (needed for android/ios packaging)
-package.domain = org.example
+package.domain = com.grass114
 
 # (str) Source code where the main.py live
 source.dir = .
@@ -22,21 +22,21 @@ source.include_exts = py,png,jpg,kv,atlas
 source.exclude_exts = spec,pyc,pyo
 
 # (list) List of directory names to not include at all
-# source.exclude_dirs = tests, bin, __pycache__, .git
+source.exclude_dirs = tests, bin, __pycache__, .git
 
 # (list) List of exclusions using pattern matching
 # source.exclude_patterns = license, images/*/*.jpg
 
 # (str) Application versioning (method 1)
-version = 1.0
+version = 1.4.0
 
 # (str) Application versioning (method 2)
 # version.regex = __version__ = ['"](.*)['"]
 # version.filename = %(source.dir)s/main.py
 
 # (list) Application requirements
-# comma separated e.g. requirements = sqlite3,kivy
-requirements = python3,kivy,pillow
+# 固定版本号，避免兼容性问题
+requirements = python3==3.11.0,kivy==2.3.0,pillow==10.1.0
 
 # (str) Custom source folders for requirements
 # requirements.source.kivy = ../../kivy
@@ -67,7 +67,7 @@ orientation = portrait
 osx.python_version = 3
 
 # Kivy version to use
-osx.kivy_version = 2.1.0
+osx.kivy_version = 2.3.0
 
 #
 # Android Specific
@@ -93,19 +93,23 @@ fullscreen = 0
 # adaptive-icon.filename = %(source.dir)s/data/icon.png
 
 # (list) Permissions
-android.permissions = WRITE_EXTERNAL_STORAGE
+android.permissions = WRITE_EXTERNAL_STORAGE,READ_EXTERNAL_STORAGE
 
+# ========== 重要：Android SDK/API 配置 ==========
 # (int) Android API to use
-# android.api = 30
+android.api = 30
 
 # (int) Minimum API required
-# android.minapi = 21
+android.minapi = 21
 
 # (int) Android SDK version to use
-# android.sdk = 30
+android.sdk = 30
 
 # (str) Android NDK version to use
-# android.ndk = 23b
+android.ndk = 23b
+
+# (bool) If True, then automatically accept SDK license
+android.accept_sdk_license = True
 
 # (bool) Use --private data storage (True) or --dir internal storage (False)
 # android.private_storage = True
@@ -121,9 +125,6 @@ android.permissions = WRITE_EXTERNAL_STORAGE
 
 # (bool) If True, then skip trying to update the Android sdk
 # android.skip_update = False
-
-# (bool) If True, then automatically accept SDK license
-# android.accept_sdk_license = True
 
 # (str) Android entry point, default is ok for Kivy-based app
 # android.entrypoint = org.kivy.android.PythonActivity
@@ -162,7 +163,8 @@ android.permissions = WRITE_EXTERNAL_STORAGE
 # android.copy_libs = 1
 
 # (str) The Android arch to build for, choices: armeabi-v7a, arm64-v8a, x86, x86_64
-android.arch = armeabi-v7a
+# 改用 arm64-v8a（现代 Android 设备主流架构）
+android.arch = arm64-v8a
 
 #
 # Python for android (p4a) specific
@@ -191,13 +193,13 @@ android.arch = armeabi-v7a
 #
 
 # (str) iOS bundle identifier
-# ios.bundle_identifier = com.example.myapp
+# ios.bundle_identifier = com.grass114.pixelcraft
 
 # (str) iOS bundle name
 # ios.bundle_name = PixelCraft
 
 # (str) iOS bundle version
-# ios.bundle_version = 1.0.0
+# ios.bundle_version = 1.4.0
 
 # (str) iOS minimum version
 # ios.minimum_ios_version = 10.0
