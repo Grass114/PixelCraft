@@ -8,8 +8,9 @@ import subprocess
 import platform
 import tkinter.font as tkFont
 from collections import Counter
+import math
+import time
 
-# 尝试导入拖拽支持
 try:
     from tkinterdnd2 import TkinterDnD
     HAS_DND = True
@@ -18,16 +19,6 @@ except ImportError:
     print("提示：未安装 tkinterdnd2，拖拽功能不可用。安装：pip install tkinterdnd2")
 
 
-# 预设尺寸
-PRESETS = {
-    "16×16": (16, 16),
-    "32×32": (32, 32),
-    "48×48": (48, 48),
-    "64×64": (64, 64),
-    "128×128": (128, 128),
-}
-
-# 调色板
 PALETTES = {
     "自动": None,
     "GameBoy (4色)": [(15, 56, 15), (48, 98, 48), (139, 172, 15), (155, 188, 15)],
@@ -45,17 +36,46 @@ PALETTES = {
         (85,85,85), (85,85,255), (85,255,85), (85,255,255),
         (255,85,85), (255,85,255), (255,255,85), (255,255,255)
     ],
+    "Commodore 64 (16色)": [
+        (0,0,0), (255,255,255), (136,0,0), (170,255,238),
+        (204,68,204), (0,204,85), (0,0,170), (238,238,119),
+        (221,136,85), (102,68,0), (255,119,119), (51,51,51),
+        (119,119,119), (170,255,102), (0,68,204), (187,85,0)
+    ],
+    "ZX Spectrum (15色)": [
+        (0,0,0), (0,0,192), (0,192,0), (0,192,192),
+        (192,0,0), (192,0,192), (192,192,0), (192,192,192),
+        (0,0,255), (0,255,0), (0,255,255), (255,0,0),
+        (255,0,255), (255,255,0), (255,255,255)
+    ],
+    "Atari 2600 (8色)": [
+        (0,0,0), (255,255,255), (255,0,0), (0,255,0),
+        (0,0,255), (255,255,0), (255,0,255), (0,255,255)
+    ],
+    "PICO-8 (16色)": [
+        (0,0,0), (29,43,83), (126,37,83), (0,135,81),
+        (171,82,54), (95,87,79), (194,195,199), (255,241,232),
+        (255,0,77), (255,163,0), (255,236,39), (0,228,54),
+        (41,173,255), (131,118,156), (255,119,168), (255,204,170)
+    ]
+}
+
+PRESETS = {
+    "16×16": (16, 16),
+    "32×32": (32, 32),
+    "48×48": (48, 48),
+    "64×64": (64, 64),
+    "128×128": (128, 128),
 }
 
 
 class PixelCraft:
     def __init__(self, root):
         self.root = root
-        self.root.title("🎨 PixelCraft")
-        self.root.geometry("900x700")
+        self.root.title("🎨 PixelCraft v1.5")
+        self.root.geometry("1000x800")
         self.root.minsize(800, 600)
 
-        # 状态变量
         self.original_image = None
         self.result_image = None
         self.orig_tk = None
@@ -64,12 +84,14 @@ class PixelCraft:
         self.after_id = None
         self.zoom_factor = 1.0
 
-        # 批量翻页相关
         self.batch_images = []
         self.batch_index = 0
         self.is_batch_mode = False
+        self.batch_cancel = False
+        self.batch_in_progress = False
 
-        # 编辑模式
+        self.compare_window = None
+
         self.edit_window = None
         self.grid_colors = []
         self.grid_w = 0
@@ -79,13 +101,16 @@ class PixelCraft:
         self.current_color = (255, 0, 0)
         self.edit_tool = "brush"
 
-        # ========== Linux 字体检测（缺字体弹窗提示） ==========
-        self.check_linux_fonts()
+        self.edit_selection = []
+        self.edit_selection_start = None
+        self.selection_rect_id = None
+        self.edit_clipboard = []
 
-        # ========== Linux 强制指定中文字体 ==========
+        self.pan_data = None
+
+        self.check_linux_fonts()
         self._setup_linux_font()
 
-        # 拖拽支持
         if HAS_DND and isinstance(root, TkinterDnD.Tk):
             root.drop_target_register('DND_Files')
             root.dnd_bind('<<Drop>>', self.on_drop)
@@ -93,19 +118,12 @@ class PixelCraft:
         self.setup_ui()
         self.update_status("拖拽图片或点击「选择图片」开始")
 
-    # ========== Linux 字体检测 ==========
+    # ========== Linux 字体 ==========
     def check_linux_fonts(self):
-        """检测 Linux 系统是否安装中文字体，缺失则弹窗提示"""
         if platform.system() != "Linux":
             return
-
         try:
-            result = subprocess.run(
-                ["fc-list", ":lang=zh"],
-                capture_output=True,
-                text=True,
-                timeout=5
-            )
+            result = subprocess.run(["fc-list", ":lang=zh"], capture_output=True, text=True, timeout=5)
             if not result.stdout.strip():
                 messagebox.showwarning(
                     "字体缺失",
@@ -114,84 +132,86 @@ class PixelCraft:
                     "sudo apt install fonts-noto-cjk fonts-wqy-microhei\n\n"
                     "安装后重新启动程序即可正常显示。"
                 )
-        except (subprocess.TimeoutExpired, FileNotFoundError):
+        except:
             pass
 
-    # ========== Linux 强制指定中文字体 ==========
     def _setup_linux_font(self):
-        """强制 Linux 系统使用中文字体"""
         if platform.system() != "Linux":
             return
-
-        # 常见中文字体候选列表
-        font_candidates = [
-            "Noto Sans CJK SC",
-            "Noto Sans CJK TC",
-            "WenQuanYi Micro Hei",
-            "WenQuanYi Zen Hei",
-            "Droid Sans Fallback",
-            "Source Han Sans SC",
-            "Source Han Sans CN",
-        ]
-
-        for font_name in font_candidates:
+        for font_name in ["Noto Sans CJK SC", "Noto Sans CJK TC", "WenQuanYi Micro Hei",
+                         "WenQuanYi Zen Hei", "Droid Sans Fallback", "Source Han Sans SC"]:
             try:
-                # 验证字体是否存在
-                result = subprocess.run(
-                    ["fc-list", f":family={font_name}"],
-                    capture_output=True,
-                    text=True,
-                    timeout=3
-                )
+                result = subprocess.run(["fc-list", f":family={font_name}"], capture_output=True, text=True, timeout=3)
                 if result.stdout.strip():
-                    # 设置 Tkinter 默认字体
                     default_font = tkFont.nametofont("TkDefaultFont")
                     default_font.configure(family=font_name, size=10)
                     print(f"✅ Linux 字体已设置为: {font_name}")
                     return
-            except Exception:
+            except:
                 continue
-
-        # 如果没找到任何中文字体，尝试使用 sans-serif
         try:
             default_font = tkFont.nametofont("TkDefaultFont")
             default_font.configure(family="sans-serif", size=10)
-            print("⚠️ 未找到中文字体，使用 sans-serif 作为备用")
-        except Exception:
+        except:
             pass
 
-    # ========== UI 布局 ==========
+    # ========== UI ==========
     def setup_ui(self):
+        menubar = tk.Menu(self.root)
+        self.root.config(menu=menubar)
+
+        # 文件菜单
+        file_menu = tk.Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="文件", menu=file_menu)
+        file_menu.add_command(label="保存", command=self.save_image)
+        file_menu.add_command(label="另存为", command=self.save_image_as)
+        file_menu.add_command(label="全部保存", command=self.save_all)
+        file_menu.add_separator()
+        file_menu.add_command(label="退出", command=self.root.quit)
+
+        # 编辑菜单
+        edit_menu = tk.Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="编辑", menu=edit_menu)
+        edit_menu.add_command(label="编辑像素画", command=self.open_editor)
+        edit_menu.add_command(label="重置缩放", command=self.reset_zoom)
+
+        preset_sub = tk.Menu(edit_menu, tearoff=0)
+        edit_menu.add_cascade(label="预设尺寸", menu=preset_sub)
+        for name in PRESETS.keys():
+            preset_sub.add_command(label=name, command=lambda n=name: self.apply_preset(n))
+
+        palette_sub = tk.Menu(edit_menu, tearoff=0)
+        edit_menu.add_cascade(label="色盘", menu=palette_sub)
+        for name in PALETTES.keys():
+            palette_sub.add_command(label=name, command=lambda n=name: self.switch_palette(n))
+
+        # 帮助菜单
+        help_menu = tk.Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="帮助", menu=help_menu)
+        help_menu.add_command(label="使用说明", command=self.show_help)
+        help_menu.add_command(label="关于", command=self.show_about)
+
+        # ---- 主布局 ----
         main = tk.Frame(self.root)
         main.pack(padx=10, pady=8, fill=tk.BOTH, expand=True)
 
-        # ---- 顶部：文件选择 ----
-        top = tk.Frame(main)
-        top.pack(fill=tk.X, pady=(0, 8))
+        info_frame = tk.Frame(main)
+        info_frame.pack(fill=tk.X, pady=(0, 5))
+        self.file_label = tk.Label(info_frame, text="未选择文件", anchor="w", relief="sunken", fg="#888")
+        self.file_label.pack(fill=tk.X)
 
-        tk.Button(top, text="📂 选择图片", command=self.load_single_image, width=12).pack(side=tk.LEFT, padx=(0,5))
-        tk.Button(top, text="📁 批量处理", command=self.load_batch_folder, width=12).pack(side=tk.LEFT, padx=(0,5))
-        self.file_label = tk.Label(top, text="未选择文件", anchor="w", relief="sunken")
-        self.file_label.pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
-
-        # ---- 翻页行（批量模式显示） ----
         nav_frame = tk.Frame(main)
         nav_frame.pack(fill=tk.X, pady=(0, 5))
-        
         self.prev_btn = tk.Button(nav_frame, text="◀ 上一张", command=self.prev_image, state=tk.DISABLED, width=10)
         self.prev_btn.pack(side=tk.LEFT, padx=(0, 10))
-        
         self.page_label = tk.Label(nav_frame, text="", fg="#888", font=("Arial", 11))
         self.page_label.pack(side=tk.LEFT)
-        
         self.next_btn = tk.Button(nav_frame, text="下一张 ▶", command=self.next_image, state=tk.DISABLED, width=10)
         self.next_btn.pack(side=tk.LEFT, padx=(10, 0))
-        
         self.save_batch_btn = tk.Button(nav_frame, text="💾 保存当前", command=self.save_current_batch,
                                          state=tk.DISABLED, bg="#4CAF50", fg="white", width=10)
         self.save_batch_btn.pack(side=tk.RIGHT)
 
-        # ---- 参数行 ----
         param = tk.Frame(main)
         param.pack(fill=tk.X, pady=(0, 8))
 
@@ -226,35 +246,41 @@ class PixelCraft:
         tk.Label(param, text="色盘:").pack(side=tk.LEFT)
         self.palette_var = tk.StringVar(value="自动")
         self.palette_combo = ttk.Combobox(param, textvariable=self.palette_var,
-                                          values=list(PALETTES.keys()), state="readonly", width=14)
+                                          values=list(PALETTES.keys()), state="readonly", width=18)
         self.palette_combo.pack(side=tk.LEFT, padx=(0, 10))
         self.palette_combo.bind("<<ComboboxSelected>>", lambda e: self.schedule_convert())
 
-        tk.Button(param, text="✏️ 编辑像素画", command=self.open_editor, width=12, bg="#FF9800", fg="white").pack(side=tk.LEFT)
+        tk.Button(param, text="✏️ 编辑像素画", command=self.open_editor, width=12, bg="#FF9800", fg="white").pack(side=tk.LEFT, padx=(0, 5))
+        tk.Button(param, text="🔍 对比视图", command=self.open_comparison, width=12, bg="#9C27B0", fg="white").pack(side=tk.LEFT)
 
-        # ---- 预览区域 ----
         display = tk.Frame(main)
         display.pack(fill=tk.BOTH, expand=True, pady=(0, 8))
+        display.grid_rowconfigure(0, weight=1)
+        display.grid_columnconfigure(0, weight=1, uniform="preview")
+        display.grid_columnconfigure(1, weight=1, uniform="preview")
 
         left = tk.LabelFrame(display, text="📷 原图")
-        left.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 5))
-        self.orig_canvas = tk.Canvas(left, bg="#1e1e1e", highlightthickness=0)
-        self.orig_canvas.pack(fill=tk.BOTH, expand=True, padx=3, pady=3)
+        left.grid(row=0, column=0, sticky="nsew", padx=(0, 5))
+        self._setup_canvas_with_scrollbar(left, "orig")
 
         right = tk.LabelFrame(display, text="🎨 像素画")
-        right.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=(5, 0))
-        self.res_canvas = tk.Canvas(right, bg="#1e1e1e", highlightthickness=0)
-        self.res_canvas.pack(fill=tk.BOTH, expand=True, padx=3, pady=3)
+        right.grid(row=0, column=1, sticky="nsew", padx=(5, 0))
+        self._setup_canvas_with_scrollbar(right, "res")
 
-        # 滚轮缩放 & 双击重置
         self.orig_canvas.bind("<MouseWheel>", self.on_mousewheel)
         self.res_canvas.bind("<MouseWheel>", self.on_mousewheel)
         self.orig_canvas.bind("<Double-Button-1>", self.reset_zoom)
         self.res_canvas.bind("<Double-Button-1>", self.reset_zoom)
 
+        self.orig_canvas.bind("<ButtonPress-1>", lambda e: self._start_pan(e, "orig"))
+        self.orig_canvas.bind("<B1-Motion>", self._do_pan)
+        self.orig_canvas.bind("<ButtonRelease-1>", self._end_pan)
+        self.res_canvas.bind("<ButtonPress-1>", lambda e: self._start_pan(e, "res"))
+        self.res_canvas.bind("<B1-Motion>", self._do_pan)
+        self.res_canvas.bind("<ButtonRelease-1>", self._end_pan)
+
         self.root.bind("<Configure>", self.on_resize)
 
-        # ---- 底部 ----
         bottom = tk.Frame(main)
         bottom.pack(fill=tk.X, pady=(5, 0))
 
@@ -262,7 +288,14 @@ class PixelCraft:
                                   state=tk.DISABLED, bg="#2196F3", fg="white")
         self.save_btn.pack(side=tk.LEFT, padx=(0, 8))
 
-        # 缩放按钮（文字）
+        self.svg_btn = tk.Button(bottom, text="📐 导出 SVG", command=self.export_svg,
+                                 state=tk.DISABLED, bg="#9C27B0", fg="white")
+        self.svg_btn.pack(side=tk.LEFT, padx=(0, 8))
+
+        self.css_btn = tk.Button(bottom, text="🎨 导出 CSS", command=self.export_css,
+                                 state=tk.DISABLED, bg="#E65100", fg="white")
+        self.css_btn.pack(side=tk.LEFT, padx=(0, 8))
+
         tk.Button(bottom, text="放大", command=self.zoom_in, width=4, bg="#333", fg="white").pack(side=tk.LEFT, padx=(0, 2))
         tk.Button(bottom, text="缩小", command=self.zoom_out, width=4, bg="#333", fg="white").pack(side=tk.LEFT, padx=(0, 2))
         tk.Button(bottom, text="重置", command=self.reset_zoom, width=4, bg="#333", fg="white").pack(side=tk.LEFT, padx=(0, 5))
@@ -275,29 +308,96 @@ class PixelCraft:
 
         self.load_config()
 
-    # ========== 滑块滚轮支持 ==========
+    def _setup_canvas_with_scrollbar(self, parent, name):
+        frame = tk.Frame(parent)
+        frame.pack(fill=tk.BOTH, expand=True, padx=3, pady=3)
+
+        v_scroll = tk.Scrollbar(frame, orient=tk.VERTICAL)
+        v_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+
+        h_scroll = tk.Scrollbar(frame, orient=tk.HORIZONTAL)
+        h_scroll.pack(side=tk.BOTTOM, fill=tk.X)
+
+        canvas = tk.Canvas(frame, bg="#1e1e1e", highlightthickness=0,
+                           xscrollcommand=h_scroll.set, yscrollcommand=v_scroll.set)
+        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        if name == "orig":
+            self.orig_canvas = canvas
+            self.orig_v_scroll = v_scroll
+            self.orig_h_scroll = h_scroll
+            v_scroll.config(command=self._sync_scroll_orig_v)
+            h_scroll.config(command=self._sync_scroll_orig_h)
+        else:
+            self.res_canvas = canvas
+            self.res_v_scroll = v_scroll
+            self.res_h_scroll = h_scroll
+            v_scroll.config(command=self._sync_scroll_res_v)
+            h_scroll.config(command=self._sync_scroll_res_h)
+
+    def _sync_scroll_orig_v(self, *args):
+        self.orig_canvas.yview(*args)
+        if self.result_image:
+            self.res_canvas.yview(*args)
+
+    def _sync_scroll_orig_h(self, *args):
+        self.orig_canvas.xview(*args)
+        if self.result_image:
+            self.res_canvas.xview(*args)
+
+    def _sync_scroll_res_v(self, *args):
+        self.res_canvas.yview(*args)
+        if self.original_image:
+            self.orig_canvas.yview(*args)
+
+    def _sync_scroll_res_h(self, *args):
+        self.res_canvas.xview(*args)
+        if self.original_image:
+            self.orig_canvas.xview(*args)
+
+    # ========== 拖拽平移 ==========
+    def _start_pan(self, event, target):
+        self.pan_data = {"x": event.x, "y": event.y, "xview": self.orig_canvas.xview()[0], "yview": self.orig_canvas.yview()[0]}
+
+    def _do_pan(self, event):
+        if self.pan_data is None:
+            return
+        x0, y0 = self.pan_data["xview"], self.pan_data["yview"]
+        dx, dy = event.x - self.pan_data["x"], event.y - self.pan_data["y"]
+        bbox = self.orig_canvas.bbox("all")
+        if not bbox:
+            return
+        rw, rh = bbox[2]-bbox[0], bbox[3]-bbox[1]
+        vw, vh = self.orig_canvas.winfo_width(), self.orig_canvas.winfo_height()
+        if rw == 0 or rh == 0:
+            return
+        nx = max(0, min(1, x0 + (dx / (rw - vw) if rw > vw else 0)))
+        ny = max(0, min(1, y0 + (dy / (rh - vh) if rh > vh else 0)))
+        self.orig_canvas.xview_moveto(nx)
+        self.orig_canvas.yview_moveto(ny)
+        self.res_canvas.xview_moveto(nx)
+        self.res_canvas.yview_moveto(ny)
+        self.pan_data["xview"], self.pan_data["yview"] = nx, ny
+        self.pan_data["x"], self.pan_data["y"] = event.x, event.y
+
+    def _end_pan(self, event):
+        self.pan_data = None
+
+    # ========== 滑块滚轮 ==========
     def on_scale_wheel(self, event, scale_widget, var, label, callback):
-        """滑块滚轮滚动处理"""
         delta = 1 if event.delta > 0 else -1
         new_val = var.get() + delta
         from_val = int(scale_widget.cget("from"))
         to_val = int(scale_widget.cget("to"))
-        if new_val < from_val:
-            new_val = from_val
-        if new_val > to_val:
-            new_val = to_val
+        new_val = max(from_val, min(to_val, new_val))
         var.set(new_val)
         label.config(text=str(new_val))
         callback()
         return "break"
 
-    # ========== 缩放功能 ==========
+    # ========== 缩放 ==========
     def on_mousewheel(self, event):
-        delta = event.delta
-        if delta > 0:
-            self.zoom_factor *= 1.1
-        else:
-            self.zoom_factor *= 0.9
+        self.zoom_factor *= 1.1 if event.delta > 0 else 0.9
         self.zoom_factor = max(0.1, min(10.0, self.zoom_factor))
         self.update_zoom_label()
         self.refresh_display()
@@ -322,11 +422,11 @@ class PixelCraft:
 
     def refresh_display(self):
         if self.original_image:
-            self.show_image(self.original_image, self.orig_canvas)
+            self.show_image(self.original_image, "orig")
         if self.result_image:
-            self.show_image(self.result_image, self.res_canvas)
+            self.show_image(self.result_image, "res")
 
-    # ========== 加载单张图片 ==========
+    # ========== 加载图片 ==========
     def load_single_image(self):
         path = filedialog.askopenfilename(
             title="选择图片",
@@ -341,84 +441,17 @@ class PixelCraft:
             self.update_zoom_label()
             self.load_image_path(path)
 
-    # ========== 批量处理：加载文件夹 ==========
-    def load_batch_folder(self):
-        folder = filedialog.askdirectory(title="选择包含图片的文件夹")
-        if not folder:
-            return
-
-        exts = ('.jpg', '.jpeg', '.png', '.bmp', '.gif', '.webp')
-        files = [os.path.join(folder, f) for f in os.listdir(folder) if f.lower().endswith(exts)]
-        
-        if not files:
-            messagebox.showinfo("提示", "该文件夹中没有找到图片文件")
-            return
-
-        self.batch_images = files
-        self.batch_index = 0
-        self.is_batch_mode = True
-        self.file_label.config(text=f"📁 {os.path.basename(folder)} ({len(files)}张)")
-        self.zoom_factor = 1.0
-        self.update_zoom_label()
-        self.update_nav_buttons()
-        self.load_image_path(files[0])
-
-    # ========== 翻页逻辑 ==========
-    def prev_image(self):
-        if self.batch_index > 0:
-            self.batch_index -= 1
-            self.zoom_factor = 1.0
-            self.update_zoom_label()
-            self.load_image_path(self.batch_images[self.batch_index])
-            self.update_nav_buttons()
-
-    def next_image(self):
-        if self.batch_index < len(self.batch_images) - 1:
-            self.batch_index += 1
-            self.zoom_factor = 1.0
-            self.update_zoom_label()
-            self.load_image_path(self.batch_images[self.batch_index])
-            self.update_nav_buttons()
-
-    def update_nav_buttons(self):
-        if self.is_batch_mode and self.batch_images:
-            total = len(self.batch_images)
-            self.prev_btn.config(state=tk.NORMAL if self.batch_index > 0 else tk.DISABLED)
-            self.next_btn.config(state=tk.NORMAL if self.batch_index < total - 1 else tk.DISABLED)
-            self.page_label.config(text=f"📄 {self.batch_index + 1} / {total}")
-            self.save_batch_btn.config(state=tk.NORMAL)
-        else:
-            self.prev_btn.config(state=tk.DISABLED)
-            self.next_btn.config(state=tk.DISABLED)
-            self.page_label.config(text="")
-            self.save_batch_btn.config(state=tk.DISABLED)
-
-    def save_current_batch(self):
-        if self.result_image is None:
-            return
-        current_path = self.batch_images[self.batch_index]
-        folder = os.path.dirname(current_path)
-        output_folder = os.path.join(folder, "pixel_output")
-        os.makedirs(output_folder, exist_ok=True)
-        base = os.path.splitext(os.path.basename(current_path))[0]
-        save_path = os.path.join(output_folder, f"{base}_pixel.png")
-        
-        try:
-            self.result_image.save(save_path)
-            self.update_status(f"✅ 已保存：{os.path.basename(save_path)}")
-        except Exception as e:
-            messagebox.showerror("保存错误", str(e))
-
-    # ========== 加载图片路径 ==========
     def load_image_path(self, path):
         try:
             self.original_image = Image.open(path).convert("RGBA")
             self.file_label.config(text=os.path.basename(path))
             self.result_image = None
             self.save_btn.config(state=tk.DISABLED)
+            self.svg_btn.config(state=tk.DISABLED)
+            self.css_btn.config(state=tk.DISABLED)
             self.current_display_size = (0, 0)
             self.update_status(f"已加载：{os.path.basename(path)}，自动转换中...")
-            self.show_image(self.original_image, self.orig_canvas)
+            self.show_image(self.original_image, "orig")
             self.schedule_convert(immediate=True)
         except Exception as e:
             messagebox.showerror("错误", f"无法打开图片：{e}")
@@ -436,27 +469,182 @@ class PixelCraft:
                 self.update_nav_buttons()
                 self.load_image_path(path)
 
-    # ========== 预设尺寸 ==========
-    def on_preset_selected(self, event):
-        preset = self.preset_var.get()
-        if preset == "自定义":
+    # ========== 批量处理 ==========
+    def load_batch_folder(self):
+        folder = filedialog.askdirectory(title="选择包含图片的文件夹")
+        if not folder:
             return
+        exts = ('.jpg', '.jpeg', '.png', '.bmp', '.gif', '.webp')
+        files = [os.path.join(folder, f) for f in os.listdir(folder) if f.lower().endswith(exts)]
+        if not files:
+            messagebox.showinfo("提示", "该文件夹中没有找到图片文件")
+            return
+        self.batch_images = files
+        self.batch_index = 0
+        self.is_batch_mode = True
+        self.batch_cancel = False
+        self.batch_in_progress = False
+        self.file_label.config(text=f"📁 {os.path.basename(folder)} ({len(files)}张)")
+        self.zoom_factor = 1.0
+        self.update_zoom_label()
+        self.update_nav_buttons()
+        self.load_image_path(files[0])
+        self.show_batch_control()
+
+    def show_batch_control(self):
+        if not self.batch_images:
+            return
+        self.batch_control_window = tk.Toplevel(self.root)
+        self.batch_control_window.title("批量处理控制")
+        self.batch_control_window.geometry("450x180")
+        self.batch_control_window.resizable(False, False)
+        self.batch_control_window.transient(self.root)
+        self.batch_control_window.grab_set()
+        x = self.root.winfo_x() + (self.root.winfo_width()-450)//2
+        y = self.root.winfo_y() + (self.root.winfo_height()-180)//2
+        self.batch_control_window.geometry(f"+{x}+{y}")
+
+        tk.Label(self.batch_control_window, text="📁 批量处理进度", font=("Arial",12,"bold")).pack(pady=(15,5))
+        self.batch_progress_label = tk.Label(self.batch_control_window, text="准备开始...", fg="#555")
+        self.batch_progress_label.pack()
+        self.batch_progress_bar = ttk.Progressbar(self.batch_control_window, length=400, mode='determinate')
+        self.batch_progress_bar.pack(pady=10)
+        self.batch_count_label = tk.Label(self.batch_control_window, text="0 / 0", fg="#888")
+        self.batch_count_label.pack()
+
+        btn_frame = tk.Frame(self.batch_control_window)
+        btn_frame.pack(pady=10)
+        self.batch_cancel_btn = tk.Button(btn_frame, text="❌ 取消", command=self.cancel_batch,
+                                          bg="#e74c3c", fg="white", width=15)
+        self.batch_cancel_btn.pack(side=tk.LEFT, padx=(0,10))
+        self.batch_complete_btn = tk.Button(btn_frame, text="📂 打开输出文件夹", command=self.open_batch_output,
+                                            bg="#4CAF50", fg="white", width=15)
+        self.batch_complete_btn.pack(side=tk.LEFT)
+        self.batch_complete_btn.config(state=tk.DISABLED)
+        self.batch_output_folder = None
+        self.batch_control_window.protocol("WM_DELETE_WINDOW", self.cancel_batch)
+
+        self.batch_in_progress = True
+        threading.Thread(target=self.batch_process_thread, daemon=True).start()
+
+    def batch_process_thread(self):
+        folder = os.path.dirname(self.batch_images[0])
+        self.batch_output_folder = os.path.join(folder, "pixel_output")
+        os.makedirs(self.batch_output_folder, exist_ok=True)
+        total = len(self.batch_images)
+        for i, img_path in enumerate(self.batch_images):
+            if self.batch_cancel:
+                break
+            cur = i+1
+            self.root.after(0, self._update_batch_progress, cur, total, os.path.basename(img_path))
+            try:
+                img = Image.open(img_path).convert("RGBA")
+                block = self.block_var.get()
+                colors = self.color_var.get()
+                palette_name = self.palette_var.get()
+                palette = PALETTES.get(palette_name)
+                result = self.process_image(img, block, colors, palette)
+                if result:
+                    base = os.path.splitext(os.path.basename(img_path))[0]
+                    result.save(os.path.join(self.batch_output_folder, f"{base}_pixel.png"))
+            except Exception as e:
+                print(f"处理 {img_path} 失败：{e}")
+        self.root.after(0, self._batch_complete)
+
+    def _update_batch_progress(self, current, total, filename):
+        if hasattr(self, 'batch_progress_bar'):
+            self.batch_progress_bar['value'] = (current/total)*100
+            self.batch_count_label.config(text=f"{current} / {total}")
+            self.batch_progress_label.config(text=f"正在处理: {filename}")
+            self.batch_control_window.update()
+
+    def _batch_complete(self):
+        self.batch_in_progress = False
+        if self.batch_cancel:
+            self.batch_progress_label.config(text="⏹ 已取消")
+        else:
+            self.batch_progress_label.config(text="✅ 处理完成！")
+            self.batch_complete_btn.config(state=tk.NORMAL)
+        self.batch_cancel_btn.config(text="关闭", command=self._close_batch_control)
+        self.update_status(f"批量处理完成！共 {len(self.batch_images)} 张")
+
+    def cancel_batch(self):
+        self.batch_cancel = True
+        self.batch_cancel_btn.config(text="正在取消...", state=tk.DISABLED)
+
+    def _close_batch_control(self):
+        if hasattr(self, 'batch_control_window') and self.batch_control_window:
+            self.batch_control_window.destroy()
+            self.batch_control_window = None
+
+    def open_batch_output(self):
+        if self.batch_output_folder and os.path.exists(self.batch_output_folder):
+            os.startfile(self.batch_output_folder)
+
+    # ========== 翻页 ==========
+    def prev_image(self):
+        if self.batch_index > 0:
+            self.batch_index -= 1
+            self.zoom_factor = 1.0
+            self.update_zoom_label()
+            self.load_image_path(self.batch_images[self.batch_index])
+            self.update_nav_buttons()
+
+    def next_image(self):
+        if self.batch_index < len(self.batch_images)-1:
+            self.batch_index += 1
+            self.zoom_factor = 1.0
+            self.update_zoom_label()
+            self.load_image_path(self.batch_images[self.batch_index])
+            self.update_nav_buttons()
+
+    def update_nav_buttons(self):
+        if self.is_batch_mode and self.batch_images:
+            total = len(self.batch_images)
+            self.prev_btn.config(state=tk.NORMAL if self.batch_index>0 else tk.DISABLED)
+            self.next_btn.config(state=tk.NORMAL if self.batch_index<total-1 else tk.DISABLED)
+            self.page_label.config(text=f"📄 {self.batch_index+1} / {total}")
+            self.save_batch_btn.config(state=tk.NORMAL)
+        else:
+            self.prev_btn.config(state=tk.DISABLED)
+            self.next_btn.config(state=tk.DISABLED)
+            self.page_label.config(text="")
+            self.save_batch_btn.config(state=tk.DISABLED)
+
+    def save_current_batch(self):
+        if self.result_image is None:
+            return
+        current_path = self.batch_images[self.batch_index]
+        folder = os.path.dirname(current_path)
+        output_folder = os.path.join(folder, "pixel_output")
+        os.makedirs(output_folder, exist_ok=True)
+        base = os.path.splitext(os.path.basename(current_path))[0]
+        save_path = os.path.join(output_folder, f"{base}_pixel.png")
+        try:
+            self.result_image.save(save_path)
+            self.update_status(f"✅ 已保存：{os.path.basename(save_path)}")
+        except Exception as e:
+            messagebox.showerror("保存错误", str(e))
+
+    # ========== 预设/色盘 ==========
+    def apply_preset(self, preset_name):
         if self.original_image is None:
             messagebox.showwarning("提示", "请先加载图片")
-            self.preset_var.set("自定义")
             return
+        self.preset_var.set(preset_name)
+        self.on_preset_selected(None)
 
+    def on_preset_selected(self, event):
+        preset = self.preset_var.get()
+        if preset == "自定义" or self.original_image is None:
+            return
         target_w, target_h = PRESETS[preset]
         w, h = self.original_image.size
-        block_w = w // target_w
-        block_h = h // target_h
-        new_block = min(block_w, block_h, 40)
-
+        new_block = min(w//target_w, h//target_h, 40)
         if new_block < 2:
             messagebox.showwarning("提示", f"图片太小，无法生成 {preset} 的网格")
             self.preset_var.set("自定义")
             return
-
         self.block_var.set(max(2, new_block))
         self.block_label.config(text=str(self.block_var.get()))
         self.schedule_convert(immediate=True)
@@ -467,64 +655,54 @@ class PixelCraft:
             self.preset_var.set("自定义")
         self.schedule_convert()
 
+    def switch_palette(self, palette_name):
+        if self.original_image is None:
+            messagebox.showwarning("提示", "请先加载图片")
+            return
+        self.palette_var.set(palette_name)
+        self.schedule_convert(immediate=True)
+
     # ========== 核心处理 ==========
-    def process_image(self, img, block, colors, palette):
+    def process_image(self, img, block, colors, palette, save_editor=True):
         w, h = img.size
         if img.mode == 'RGBA':
-            r, g, b, a = img.split()
-            rgb_img = Image.merge('RGB', (r, g, b))
+            r,g,b,a = img.split()
+            rgb_img = Image.merge('RGB', (r,g,b))
             has_alpha = True
         else:
             rgb_img = img.convert('RGB')
             has_alpha = False
-
-        bw = max(1, w // block)
-        bh = max(1, h // block)
-
-        small = rgb_img.resize((bw, bh), Image.NEAREST)
-
+        bw, bh = max(1,w//block), max(1,h//block)
+        small = rgb_img.resize((bw,bh), Image.NEAREST)
         if palette:
             small = self.apply_palette(small, palette)
         else:
             if colors < 256:
-                small = small.quantize(colors=colors, method=Image.MEDIANCUT)
-                small = small.convert('RGB')
-
-        result_rgb = small.resize((w, h), Image.NEAREST)
-
+                small = small.quantize(colors=colors, method=Image.MEDIANCUT).convert('RGB')
+        result_rgb = small.resize((w,h), Image.NEAREST)
         if has_alpha:
-            small_a = a.resize((bw, bh), Image.NEAREST)
-            result_a = small_a.resize((w, h), Image.NEAREST)
+            small_a = a.resize((bw,bh), Image.NEAREST)
+            result_a = small_a.resize((w,h), Image.NEAREST)
             result = Image.merge('RGBA', (*result_rgb.split(), result_a))
         else:
             result = result_rgb
-
-        self.grid_w = bw
-        self.grid_h = bh
-        self.grid_colors = []
-        small_pixels = small.load()
-        for y in range(bh):
-            row = []
-            for x in range(bw):
-                row.append(small_pixels[x, y])
-            self.grid_colors.append(row)
-
+        if save_editor:
+            self.grid_w, self.grid_h = bw, bh
+            self.grid_colors = []
+            small_pixels = small.load()
+            for y in range(bh):
+                row = [small_pixels[x,y] for x in range(bw)]
+                self.grid_colors.append(row)
         return result
 
     def apply_palette(self, image, palette_colors):
         pixels = image.load()
-        w, h = image.size
+        w,h = image.size
         for y in range(h):
             for x in range(w):
-                r, g, b = pixels[x, y]
-                best = (r, g, b)
-                min_dist = float('inf')
-                for pr, pg, pb in palette_colors:
-                    dist = (r-pr)**2 + (g-pg)**2 + (b-pb)**2
-                    if dist < min_dist:
-                        min_dist = dist
-                        best = (pr, pg, pb)
-                pixels[x, y] = best
+                r,g,b = pixels[x,y]
+                best = min(palette_colors, key=lambda c: (r-c[0])**2 + (g-c[1])**2 + (b-c[2])**2)
+                pixels[x,y] = best
         return image
 
     # ========== 转换调度 ==========
@@ -542,122 +720,357 @@ class PixelCraft:
     def do_convert(self):
         if self.original_image is None:
             return
-        block = self.block_var.get()
-        colors = self.color_var.get()
-        palette_name = self.palette_var.get()
-        palette = PALETTES.get(palette_name)
-
+        block, colors = self.block_var.get(), self.color_var.get()
+        palette = PALETTES.get(self.palette_var.get())
         try:
             img = self.original_image.copy()
             result = self.process_image(img, block, colors, palette)
             self.result_image = result
-            self.show_image(result, self.res_canvas)
+            self.show_image(result, "res")
             self.save_btn.config(state=tk.NORMAL)
+            self.svg_btn.config(state=tk.NORMAL)
+            self.css_btn.config(state=tk.NORMAL)
             self.update_status(f"✅ 块 {block} | 颜色 {colors} | 网格 {self.grid_w}×{self.grid_h}")
         except Exception as e:
             messagebox.showerror("转换错误", str(e))
 
     # ========== 显示图片 ==========
-    def show_image(self, pil_img, canvas):
+    def show_image(self, pil_img, target):
         if pil_img is None:
             return
-        cw = canvas.winfo_width()
-        ch = canvas.winfo_height()
+        canvas = self.orig_canvas if target=="orig" else self.res_canvas
+        cw, ch = canvas.winfo_width(), canvas.winfo_height()
         if cw < 10 or ch < 10:
+            self.root.after(100, lambda: self.show_image(pil_img, target))
             return
-
-        w, h = pil_img.size
-        scale_fit = min(cw / w, ch / h, 1.0)
-        final_scale = scale_fit * self.zoom_factor
-        new_w = int(w * final_scale)
-        new_h = int(h * final_scale)
-
+        w,h = pil_img.size
+        scale = min(cw/w, ch/h, 1.0) * self.zoom_factor
+        new_w, new_h = int(w*scale), int(h*scale)
         if new_w < 1 or new_h < 1:
             return
-
-        resized = pil_img.resize((new_w, new_h), Image.Resampling.LANCZOS)
+        resized = pil_img.resize((new_w,new_h), Image.Resampling.LANCZOS)
         tk_img = ImageTk.PhotoImage(resized)
         canvas.delete("all")
-        x = (cw - new_w) // 2
-        y = (ch - new_h) // 2
-        canvas.create_image(x, y, anchor=tk.NW, image=tk_img)
-
-        if canvas == self.orig_canvas:
+        if new_w <= cw and new_h <= ch:
+            x, y = (cw-new_w)//2, (ch-new_h)//2
+            canvas.create_image(x, y, anchor=tk.NW, image=tk_img)
+            canvas.config(scrollregion=(0,0,new_w,new_h))
+        else:
+            canvas.create_image(0, 0, anchor=tk.NW, image=tk_img)
+            canvas.config(scrollregion=(0,0,new_w,new_h))
+        if target=="orig":
             self.orig_tk = tk_img
         else:
             self.res_tk = tk_img
+        if new_w <= cw and new_h <= ch:
+            canvas.xview_moveto(0); canvas.yview_moveto(0)
 
     def on_resize(self, event):
         if self.original_image is None:
             return
-        w = self.orig_canvas.winfo_width()
-        h = self.orig_canvas.winfo_height()
-        if w > 10 and h > 10 and (w, h) != self.current_display_size:
-            self.current_display_size = (w, h)
+        w, h = self.orig_canvas.winfo_width(), self.orig_canvas.winfo_height()
+        if w > 10 and h > 10 and (w,h) != self.current_display_size:
+            self.current_display_size = (w,h)
             self.refresh_display()
 
-    # ========== 像素画编辑器 ==========
+    # ========== 对比视图 ==========
+    def open_comparison(self):
+        if self.original_image is None or self.result_image is None:
+            messagebox.showwarning("提示", "请先生成像素画")
+            return
+        if self.compare_window is not None and self.compare_window.winfo_exists():
+            self.compare_window.lift()
+            return
+        self.compare_window = tk.Toplevel(self.root)
+        self.compare_window.title("🔍 对比视图")
+        self.compare_window.geometry("900x600")
+        self.compare_window.minsize(600,400)
+        orig = self.original_image.convert('RGB')
+        res = self.result_image.convert('RGB')
+        split_pos = 0.5
+        dragging = False
+
+        canvas_frame = tk.Frame(self.compare_window)
+        canvas_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        compare_canvas = tk.Canvas(canvas_frame, bg="#1e1e1e", highlightthickness=0)
+        compare_canvas.pack(fill=tk.BOTH, expand=True)
+
+        def draw():
+            cw, ch = compare_canvas.winfo_width(), compare_canvas.winfo_height()
+            if cw < 10 or ch < 10:
+                compare_canvas.after(100, draw)
+                return
+            w,h = orig.size
+            scale = min(cw/w, ch/h, 1.0)
+            nw, nh = int(w*scale), int(h*scale)
+            orig_r = orig.resize((nw,nh), Image.Resampling.LANCZOS)
+            res_r = res.resize((nw,nh), Image.Resampling.LANCZOS)
+            self.compare_orig_tk = ImageTk.PhotoImage(orig_r)
+            self.compare_res_tk = ImageTk.PhotoImage(res_r)
+            compare_canvas.delete("all")
+            xoff, yoff = (cw-nw)//2, (ch-nh)//2
+            compare_canvas.create_image(xoff, yoff, anchor=tk.NW, image=self.compare_orig_tk)
+            split_x = int(max(0, min(nw, split_pos*nw)))
+            compare_canvas.create_rectangle(xoff+split_x, yoff, xoff+nw, yoff+nh, fill="", outline="", tags="clip")
+            compare_canvas.create_image(xoff+split_x, yoff, anchor=tk.NW, image=self.compare_res_tk, tags="res")
+            compare_canvas.tag_clip("res", xoff+split_x, yoff, xoff+nw, yoff+nh)
+            compare_canvas.create_line(xoff+split_x, yoff, xoff+split_x, yoff+nh, fill="white", width=2, tags="line")
+            r=10
+            compare_canvas.create_oval(xoff+split_x-r, yoff+nh//2-r, xoff+split_x+r, yoff+nh//2+r, fill="white", outline="#2196F3", width=2, tags="handle")
+            compare_canvas.create_text(xoff+split_x, yoff+20, text=f"{int(split_pos*100)}%", fill="white", font=("Arial",12,"bold"), tags="label")
+            compare_canvas.compare_xoff = xoff
+            compare_canvas.compare_nw = nw
+
+        def on_down(e):
+            nonlocal dragging
+            split_x = int(split_pos*compare_canvas.compare_nw) + compare_canvas.compare_xoff
+            if abs(e.x - split_x) < 25:
+                dragging = True
+
+        def on_move(e):
+            nonlocal dragging, split_pos
+            if not dragging:
+                return
+            rel = e.x - compare_canvas.compare_xoff
+            nw = compare_canvas.compare_nw
+            split_pos = max(0.02, min(0.98, rel/nw))
+            draw()
+
+        def on_up(e):
+            nonlocal dragging
+            dragging = False
+
+        compare_canvas.bind("<Button-1>", on_down)
+        compare_canvas.bind("<B1-Motion>", on_move)
+        compare_canvas.bind("<ButtonRelease-1>", on_up)
+        compare_canvas.bind("<Configure>", lambda e: draw())
+
+        sep = ttk.Separator(self.compare_window, orient='horizontal')
+        sep.pack(fill=tk.X, padx=10)
+
+        bottom_frame = tk.Frame(self.compare_window)
+        bottom_frame.pack(fill=tk.X, padx=10, pady=10)
+        tk.Label(bottom_frame, text="← 原图", fg="#888").pack(side=tk.LEFT, padx=(0,10))
+        slider = tk.Scale(bottom_frame, from_=0, to=100, orient=tk.HORIZONTAL, length=400)
+        slider.set(50)
+        slider.pack(side=tk.LEFT, padx=10)
+        def slider_update(val):
+            nonlocal split_pos
+            split_pos = float(val)/100
+            draw()
+        slider.config(command=slider_update)
+        tk.Label(bottom_frame, text="像素画 →", fg="#888").pack(side=tk.LEFT, padx=(10,0))
+        tk.Button(bottom_frame, text="重置", command=lambda: (slider.set(50), slider_update("50")), width=6, bg="#333", fg="white").pack(side=tk.RIGHT, padx=(0,5))
+        tk.Button(bottom_frame, text="关闭", command=self.compare_window.destroy, width=6, bg="#555", fg="white").pack(side=tk.RIGHT)
+
+        self.compare_window.after(100, draw)
+
+    # ========== 导出 SVG ==========
+    def export_svg(self):
+        if self.result_image is None:
+            messagebox.showwarning("提示", "请先生成像素画")
+            return
+        path = filedialog.asksaveasfilename(defaultextension=".svg", filetypes=[("SVG矢量图", "*.svg")])
+        if not path:
+            return
+        try:
+            img = self.result_image.convert('RGB')
+            w,h = img.size
+            pixels = img.load()
+            ps = 10
+            svg = f'<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" width="{w*ps}" height="{h*ps}" viewBox="0 0 {w*ps} {h*ps}">\n  <rect width="100%" height="100%" fill="#ffffff"/>\n'
+            for y in range(h):
+                for x in range(w):
+                    r,g,b = pixels[x,y]
+                    svg += f'  <rect x="{x*ps}" y="{y*ps}" width="{ps}" height="{ps}" fill="#{r:02x}{g:02x}{b:02x}" stroke="#eeeeee" stroke-width="0.5"/>\n'
+            svg += '</svg>'
+            with open(path,'w',encoding='utf-8') as f:
+                f.write(svg)
+            self.update_status(f"✅ SVG 已导出：{os.path.basename(path)}")
+        except Exception as e:
+            messagebox.showerror("导出 SVG 错误", str(e))
+
+    # ========== 导出 CSS ==========
+    def export_css(self):
+        if self.result_image is None:
+            messagebox.showwarning("提示", "请先生成像素画")
+            return
+        path = filedialog.asksaveasfilename(defaultextension=".html", filetypes=[("HTML文件", "*.html"), ("CSS文件", "*.css")])
+        if not path:
+            return
+        try:
+            img = self.result_image.convert('RGB')
+            w,h = img.size
+            pixels = img.load()
+            ps = 10
+            shadows = []
+            for y in range(h):
+                for x in range(w):
+                    r,g,b = pixels[x,y]
+                    if not (r==255 and g==255 and b==255):
+                        shadows.append(f"{x*ps}px {y*ps}px #{r:02x}{g:02x}{b:02x}")
+            if not shadows:
+                shadows.append("0 0 #000000")
+            css = f""".pixel-art{{
+    width:{ps}px;
+    height:{ps}px;
+    box-shadow: {shadows[0]};
+"""
+            for s in shadows[1:]:
+                css += f"        {s};\n"
+            css += "}"
+            html = f"""<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>PixelCraft 像素画</title>
+<style>body{{display:flex;justify-content:center;align-items:center;min-height:100vh;margin:0;background:#1a1a2e;}}
+.pixel-art{{width:{ps}px;height:{ps}px;box-shadow:{shadows[0]};
+"""
+            for s in shadows[1:]:
+                html += f"                {s};\n"
+            html += f"""}}
+.info{{color:#888;margin-top:20px;font-size:14px;}}
+.info span{{color:#f0883e;}}
+</style></head><body><div class="pixel-art"></div></body></html>"""
+            with open(path,'w',encoding='utf-8') as f:
+                f.write(html)
+            self.update_status(f"✅ CSS 像素画已导出：{os.path.basename(path)}")
+        except Exception as e:
+            messagebox.showerror("导出 CSS 错误", str(e))
+
+    # ========== 保存功能 ==========
+    def save_image(self):
+        if self.result_image is None:
+            return
+        path = filedialog.asksaveasfilename(defaultextension=".png",
+            filetypes=[("PNG图片","*.png"),("JPEG图片","*.jpg"),("BMP图片","*.bmp")])
+        if path:
+            try:
+                self.result_image.save(path)
+                self.update_status(f"✅ 已保存：{os.path.basename(path)}")
+            except Exception as e:
+                messagebox.showerror("保存错误", str(e))
+
+    def save_image_as(self):
+        if self.result_image is None:
+            messagebox.showwarning("提示", "没有可保存的像素画")
+            return
+        path = filedialog.asksaveasfilename(defaultextension=".png",
+            filetypes=[("PNG图片","*.png"),("JPEG图片","*.jpg"),("BMP图片","*.bmp")])
+        if path:
+            try:
+                self.result_image.save(path)
+                self.update_status(f"✅ 已保存：{os.path.basename(path)}")
+            except Exception as e:
+                messagebox.showerror("保存错误", str(e))
+
+    def save_all(self):
+        if self.original_image is None:
+            messagebox.showwarning("提示", "没有图片可保存")
+            return
+        if not self.is_batch_mode:
+            if self.batch_images:
+                current_path = self.batch_images[self.batch_index]
+                folder = os.path.dirname(current_path)
+                output_folder = os.path.join(folder, "pixel_output")
+                os.makedirs(output_folder, exist_ok=True)
+                base = os.path.splitext(os.path.basename(current_path))[0]
+                save_path = os.path.join(output_folder, f"{base}_pixel.png")
+                try:
+                    if self.result_image:
+                        self.result_image.save(save_path)
+                        self.update_status(f"✅ 已保存到：{os.path.basename(save_path)}")
+                except Exception as e:
+                    messagebox.showerror("保存错误", str(e))
+            else:
+                self.save_image_as()
+            return
+        if not self.batch_images:
+            messagebox.showinfo("提示", "没有批量图片")
+            return
+        folder = os.path.dirname(self.batch_images[0])
+        output_folder = os.path.join(folder, "pixel_output")
+        os.makedirs(output_folder, exist_ok=True)
+        total = len(self.batch_images)
+        for i, img_path in enumerate(self.batch_images):
+            try:
+                img = Image.open(img_path).convert("RGBA")
+                block, colors = self.block_var.get(), self.color_var.get()
+                palette = PALETTES.get(self.palette_var.get())
+                result = self.process_image(img, block, colors, palette, save_editor=False)
+                if result:
+                    base = os.path.splitext(os.path.basename(img_path))[0]
+                    result.save(os.path.join(output_folder, f"{base}_pixel.png"))
+            except Exception as e:
+                print(f"处理 {img_path} 失败：{e}")
+        self.update_status(f"✅ 全部保存完成！共 {total} 张图片")
+        messagebox.showinfo("完成", f"全部保存完成！\n共保存 {total} 张图片\n位置：{output_folder}")
+
+    # ========== 编辑器 ==========
     def open_editor(self):
         if self.result_image is None:
             messagebox.showwarning("提示", "请先生成像素画")
             return
-
         if self.edit_window is not None and self.edit_window.winfo_exists():
             self.edit_window.lift()
             return
-
         self.edit_window = tk.Toplevel(self.root)
-        self.edit_window.title("✏️ 像素画编辑器")
-        self.edit_window.geometry("700x600")
-        self.edit_window.minsize(500, 400)
+        self.edit_window.title("✏️ 像素画编辑器 v1.5")
+        self.edit_window.geometry("750x650")
+        self.edit_window.minsize(550,450)
 
-        self.undo_stack = []
-        self.redo_stack = []
+        self.undo_stack, self.redo_stack = [], []
         self.edit_tool = "brush"
-        self.current_color = (255, 0, 0)
+        self.current_color = (255,0,0)
+        self.edit_selection = []
+        self.edit_selection_start = None
+        self.selection_rect_id = None
+        self.edit_clipboard = []
 
         grid_data = self.grid_colors
-        grid_h = len(grid_data)
-        grid_w = len(grid_data[0]) if grid_h > 0 else 0
-        self.edit_grid_w = grid_w
-        self.edit_grid_h = grid_h
+        self.edit_grid_w, self.edit_grid_h = len(grid_data[0]) if grid_data else 0, len(grid_data)
         self.edit_grid = [row[:] for row in grid_data]
 
-        top_frame = tk.Frame(self.edit_window)
-        top_frame.pack(fill=tk.X, padx=10, pady=5)
-
-        tk.Label(top_frame, text="工具:").pack(side=tk.LEFT)
+        top = tk.Frame(self.edit_window); top.pack(fill=tk.X, padx=10, pady=5)
+        tk.Label(top, text="工具:").pack(side=tk.LEFT)
+        tools = tk.Frame(top); tools.pack(side=tk.LEFT, padx=5)
         self.tool_var = tk.StringVar(value="画笔")
-        tk.Radiobutton(top_frame, text="🖊️ 画笔", variable=self.tool_var, value="画笔", command=self.set_tool).pack(side=tk.LEFT, padx=5)
-        tk.Radiobutton(top_frame, text="🧹 橡皮", variable=self.tool_var, value="橡皮", command=self.set_tool).pack(side=tk.LEFT, padx=5)
-
-        tk.Label(top_frame, text="  ").pack(side=tk.LEFT)
-
-        self.color_preview = tk.Canvas(top_frame, width=30, height=30, bg="#FF0000", highlightthickness=2)
+        for t, label in [("画笔","🖊️ 画笔"), ("橡皮","🧹 橡皮"), ("框选","🔲 框选"), ("填充","🪣 填充"), ("吸管","💉 吸管")]:
+            tk.Radiobutton(tools, text=label, variable=self.tool_var, value=t, command=self.set_tool).pack(side=tk.LEFT, padx=2)
+        tk.Label(top, text="  ").pack(side=tk.LEFT)
+        self.color_preview = tk.Canvas(top, width=30, height=30, bg="#FF0000", highlightthickness=2)
         self.color_preview.pack(side=tk.LEFT, padx=5)
-        tk.Button(top_frame, text="选择颜色", command=self.choose_color).pack(side=tk.LEFT, padx=5)
+        tk.Button(top, text="选择颜色", command=self.choose_color).pack(side=tk.LEFT, padx=5)
+        tk.Label(top, text="  ").pack(side=tk.LEFT)
+        tk.Button(top, text="↩ 撤销", command=self.editor_undo).pack(side=tk.LEFT, padx=2)
+        tk.Button(top, text="↪ 重做", command=self.editor_redo).pack(side=tk.LEFT, padx=2)
+        tk.Button(top, text="📋 复制", command=self.editor_copy).pack(side=tk.LEFT, padx=2)
+        tk.Button(top, text="📄 粘贴", command=self.editor_paste).pack(side=tk.LEFT, padx=2)
+        tk.Button(top, text="🗑️ 清空选择", command=self.editor_clear_selection).pack(side=tk.LEFT, padx=2)
+        tk.Button(top, text="✅ 保存并关闭", command=self.save_editor).pack(side=tk.RIGHT, padx=5)
 
-        tk.Label(top_frame, text="  ").pack(side=tk.LEFT)
+        hint_frame = tk.Frame(self.edit_window); hint_frame.pack(fill=tk.X, padx=10, pady=(0,5))
+        self.hint_label = tk.Label(hint_frame, text="💡 画笔：点击修改 | 框选：拖拽选多个 | 填充：点击区域自动填色 | 吸管：拾取颜色", fg="#888", font=("Arial",9))
+        self.hint_label.pack()
 
-        tk.Button(top_frame, text="↩ 撤销", command=self.editor_undo).pack(side=tk.LEFT, padx=2)
-        tk.Button(top_frame, text="↪ 重做", command=self.editor_redo).pack(side=tk.LEFT, padx=2)
-
-        tk.Button(top_frame, text="✅ 保存并关闭", command=self.save_editor).pack(side=tk.RIGHT, padx=5)
-
-        canvas_frame = tk.Frame(self.edit_window)
-        canvas_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
-
+        canvas_frame = tk.Frame(self.edit_window); canvas_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
         self.edit_canvas = tk.Canvas(canvas_frame, bg="#1e1e1e", highlightthickness=0)
         self.edit_canvas.pack(fill=tk.BOTH, expand=True)
-
         self.edit_canvas.bind("<Configure>", self.draw_edit_grid)
         self.edit_canvas.bind("<Button-1>", self.on_edit_click)
         self.edit_canvas.bind("<B1-Motion>", self.on_edit_drag)
-
+        self.edit_canvas.bind("<ButtonRelease-1>", self.on_edit_release)
+        self.edit_canvas.bind("<KeyPress>", self.on_edit_key)
+        self.edit_canvas.focus_set()
         self.draw_edit_grid()
 
     def set_tool(self):
-        self.edit_tool = "eraser" if self.tool_var.get() == "橡皮" else "brush"
+        self.edit_tool = self.tool_var.get()
+        if self.edit_tool != "框选":
+            self.clear_selection()
+        self.update_hint()
+
+    def update_hint(self):
+        hints = {"画笔":"🖊️ 点击像素块修改颜色", "橡皮":"🧹 点击像素块擦除", "框选":"🔲 拖拽选中，方向键移动", "填充":"🪣 点击区域自动填充", "吸管":"💉 拾取像素颜色"}
+        self.hint_label.config(text=f"💡 {hints.get(self.edit_tool, '')}")
 
     def choose_color(self):
         color = colorchooser.askcolor(title="选择颜色", initialcolor=self.current_color)
@@ -666,164 +1079,262 @@ class PixelCraft:
             self.color_preview.config(bg=f"#{self.current_color[0]:02x}{self.current_color[1]:02x}{self.current_color[2]:02x}")
 
     def draw_edit_grid(self, event=None):
-        if self.edit_grid_w == 0 or self.edit_grid_h == 0:
-            return
-        cw = self.edit_canvas.winfo_width()
-        ch = self.edit_canvas.winfo_height()
-        if cw < 10 or ch < 10:
-            return
-
-        cell_w = cw / self.edit_grid_w
-        cell_h = ch / self.edit_grid_h
-        cell_size = min(cell_w, cell_h)
-        offset_x = (cw - cell_size * self.edit_grid_w) / 2
-        offset_y = (ch - cell_size * self.edit_grid_h) / 2
-
-        self.edit_cell_size = cell_size
-        self.edit_offset_x = offset_x
-        self.edit_offset_y = offset_y
-
+        if self.edit_grid_w == 0 or self.edit_grid_h == 0: return
+        cw, ch = self.edit_canvas.winfo_width(), self.edit_canvas.winfo_height()
+        if cw < 10 or ch < 10: return
+        cell = min(cw/self.edit_grid_w, ch/self.edit_grid_h)
+        ox, oy = (cw-cell*self.edit_grid_w)/2, (ch-cell*self.edit_grid_h)/2
+        self.edit_cell_size, self.edit_offset_x, self.edit_offset_y = cell, ox, oy
         self.edit_canvas.delete("all")
-
         for y in range(self.edit_grid_h):
             for x in range(self.edit_grid_w):
-                color = self.edit_grid[y][x]
-                x0 = offset_x + x * cell_size
-                y0 = offset_y + y * cell_size
-                hex_color = f"#{color[0]:02x}{color[1]:02x}{color[2]:02x}"
-                self.edit_canvas.create_rectangle(
-                    x0, y0, x0 + cell_size, y0 + cell_size,
-                    fill=hex_color, outline="#333", width=1,
-                    tags=f"cell_{y}_{x}"
-                )
+                col = self.edit_grid[y][x]
+                x0, y0 = ox+x*cell, oy+y*cell
+                self.edit_canvas.create_rectangle(x0,y0,x0+cell,y0+cell, fill=f"#{col[0]:02x}{col[1]:02x}{col[2]:02x}", outline="#333", width=1, tags=f"cell_{y}_{x}")
+        for sx, sy in self.edit_selection:
+            x0, y0 = ox+sx*cell, oy+sy*cell
+            self.edit_canvas.create_rectangle(x0,y0,x0+cell,y0+cell, outline="#00FF00", width=3, tags="selection")
+
+    def get_grid_pos(self, x, y):
+        rx, ry = x-self.edit_offset_x, y-self.edit_offset_y
+        if rx < 0 or ry < 0: return None
+        gx, gy = int(rx/self.edit_cell_size), int(ry/self.edit_cell_size)
+        if gx >= self.edit_grid_w or gy >= self.edit_grid_h: return None
+        return (gx, gy)
 
     def on_edit_click(self, event):
-        self.edit_pixel_at(event.x, event.y)
+        self.edit_canvas.focus_set()
+        pos = self.get_grid_pos(event.x, event.y)
+        if not pos: return
+        gx, gy = pos
+        if self.edit_tool == "填充":
+            self.flood_fill(gx, gy); return
+        if self.edit_tool == "吸管":
+            col = self.edit_grid[gy][gx]
+            self.current_color = col
+            self.color_preview.config(bg=f"#{col[0]:02x}{col[1]:02x}{col[2]:02x}")
+            self.update_hint(); return
+        if self.edit_tool == "框选":
+            self.edit_selection_start = pos
+            self.clear_selection(); return
+        self.edit_pixel_at(gx, gy)
 
     def on_edit_drag(self, event):
-        self.edit_pixel_at(event.x, event.y)
-
-    def edit_pixel_at(self, x, y):
-        if self.edit_grid_w == 0 or self.edit_grid_h == 0:
+        pos = self.get_grid_pos(event.x, event.y)
+        if not pos: return
+        if self.edit_tool == "框选" and self.edit_selection_start:
+            sx, sy = self.edit_selection_start
+            cx, cy = pos
+            if self.selection_rect_id:
+                self.edit_canvas.delete(self.selection_rect_id)
+            x0 = self.edit_offset_x + min(sx,cx)*self.edit_cell_size
+            y0 = self.edit_offset_y + min(sy,cy)*self.edit_cell_size
+            x1 = self.edit_offset_x + (max(sx,cx)+1)*self.edit_cell_size
+            y1 = self.edit_offset_y + (max(sy,cy)+1)*self.edit_cell_size
+            self.selection_rect_id = self.edit_canvas.create_rectangle(x0,y0,x1,y1, outline="#00FF00", width=2, dash=(4,4))
             return
-        rel_x = x - self.edit_offset_x
-        rel_y = y - self.edit_offset_y
-        if rel_x < 0 or rel_y < 0:
-            return
-        grid_x = int(rel_x / self.edit_cell_size)
-        grid_y = int(rel_y / self.edit_cell_size)
-        if grid_x >= self.edit_grid_w or grid_y >= self.edit_grid_h:
-            return
+        if self.edit_tool in ["画笔","橡皮"]:
+            self.edit_pixel_at(pos[0], pos[1])
 
-        if not self.undo_stack or self.undo_stack[-1] != (grid_x, grid_y, self.edit_grid[grid_y][grid_x]):
-            self.undo_stack.append((grid_x, grid_y, self.edit_grid[grid_y][grid_x]))
-            self.redo_stack = []
+    def on_edit_release(self, event):
+        if self.edit_tool == "框选" and self.edit_selection_start:
+            pos = self.get_grid_pos(event.x, event.y)
+            if pos:
+                sx, sy = self.edit_selection_start
+                cx, cy = pos
+                self.edit_selection = [(x,y) for y in range(min(sy,cy), max(sy,cy)+1) for x in range(min(sx,cx), max(sx,cx)+1) if 0<=x<self.edit_grid_w and 0<=y<self.edit_grid_h]
+                self.update_hint()
+            self.edit_selection_start = None
+            self.draw_edit_grid()
 
-        if self.edit_tool == "eraser":
-            color = (128, 128, 128)
-        else:
-            color = self.current_color
+    def flood_fill(self, sx, sy):
+        target = self.edit_grid[sy][sx]
+        fill = self.current_color
+        if target == fill: return
+        self.undo_stack.append(("flood_fill", sx, sy, target, fill))
+        from collections import deque
+        q = deque([(sx, sy)])
+        visited = set([(sx, sy)])
+        while q:
+            x, y = q.popleft()
+            if not (0 <= x < self.edit_grid_w and 0 <= y < self.edit_grid_h): continue
+            if self.edit_grid[y][x] != target: continue
+            self.edit_grid[y][x] = fill
+            for dx, dy in ((1,0),(-1,0),(0,1),(0,-1)):
+                nx, ny = x+dx, y+dy
+                if 0 <= nx < self.edit_grid_w and 0 <= ny < self.edit_grid_h:
+                    if (nx,ny) not in visited and self.edit_grid[ny][nx] == target:
+                        visited.add((nx,ny)); q.append((nx,ny))
+        self.draw_edit_grid()
 
-        self.edit_grid[grid_y][grid_x] = color
+    def editor_copy(self):
+        if not self.edit_selection: messagebox.showinfo("提示", "请先用框选工具选中区域"); return
+        self.edit_clipboard = [(x,y,self.edit_grid[y][x]) for (x,y) in self.edit_selection]
+        self.update_hint()
 
-        x0 = self.edit_offset_x + grid_x * self.edit_cell_size
-        y0 = self.edit_offset_y + grid_y * self.edit_cell_size
-        hex_color = f"#{color[0]:02x}{color[1]:02x}{color[2]:02x}"
-        self.edit_canvas.create_rectangle(
-            x0, y0, x0 + self.edit_cell_size, y0 + self.edit_cell_size,
-            fill=hex_color, outline="#333", width=1,
-            tags=f"cell_{grid_y}_{grid_x}"
-        )
+    def editor_paste(self):
+        if not self.edit_clipboard: messagebox.showinfo("提示", "剪贴板为空"); return
+        if not self.edit_selection: messagebox.showinfo("提示", "请先选中目标区域左上角"); return
+        ax, ay = self.edit_selection[0]
+        minx = min(x for x,y,c in self.edit_clipboard)
+        miny = min(y for x,y,c in self.edit_clipboard)
+        for x,y,c in self.edit_clipboard:
+            tx, ty = ax + (x-minx), ay + (y-miny)
+            if 0 <= tx < self.edit_grid_w and 0 <= ty < self.edit_grid_h:
+                if not self.undo_stack or self.undo_stack[-1] != (tx,ty,self.edit_grid[ty][tx]):
+                    self.undo_stack.append((tx,ty,self.edit_grid[ty][tx])); self.redo_stack.clear()
+                self.edit_grid[ty][tx] = c
+        self.draw_edit_grid()
+
+    def editor_clear_selection(self):
+        if not self.edit_selection: return
+        for x,y in self.edit_selection:
+            if not self.undo_stack or self.undo_stack[-1] != (x,y,self.edit_grid[y][x]):
+                self.undo_stack.append((x,y,self.edit_grid[y][x])); self.redo_stack.clear()
+            self.edit_grid[y][x] = (128,128,128)
+        self.edit_selection.clear()
+        self.draw_edit_grid()
+
+    def clear_selection(self):
+        self.edit_selection.clear()
+        self.edit_selection_start = None
+        if self.selection_rect_id:
+            self.edit_canvas.delete(self.selection_rect_id); self.selection_rect_id = None
+        self.update_hint()
+
+    def on_edit_key(self, event):
+        if not self.edit_selection: return
+        dx = dy = 0
+        if event.keysym == "Left": dx = -1
+        elif event.keysym == "Right": dx = 1
+        elif event.keysym == "Up": dy = -1
+        elif event.keysym == "Down": dy = 1
+        else: return
+        new_sel = []
+        for x,y in self.edit_selection:
+            nx, ny = x+dx, y+dy
+            if 0 <= nx < self.edit_grid_w and 0 <= ny < self.edit_grid_h:
+                new_sel.append((nx,ny))
+            else:
+                return
+        for x,y in self.edit_selection:
+            if not self.undo_stack or self.undo_stack[-1] != (x,y,self.edit_grid[y][x]):
+                self.undo_stack.append((x,y,self.edit_grid[y][x])); self.redo_stack.clear()
+        old = [row[:] for row in self.edit_grid]
+        for x,y in self.edit_selection:
+            self.edit_grid[y][x] = (128,128,128)
+        for i, (x,y) in enumerate(self.edit_selection):
+            nx, ny = new_sel[i]
+            self.edit_grid[ny][nx] = old[y][x]
+        self.edit_selection = new_sel
+        self.draw_edit_grid()
 
     def editor_undo(self):
-        if not self.undo_stack:
-            return
-        grid_x, grid_y, old_color = self.undo_stack.pop()
-        self.redo_stack.append((grid_x, grid_y, self.edit_grid[grid_y][grid_x]))
-        self.edit_grid[grid_y][grid_x] = old_color
+        if not self.undo_stack: return
+        item = self.undo_stack.pop()
+        if isinstance(item, tuple) and item[0] == "flood_fill":
+            _, sx, sy, target, fill = item
+            from collections import deque
+            q = deque([(sx, sy)])
+            visited = set([(sx, sy)])
+            while q:
+                x, y = q.popleft()
+                if not (0 <= x < self.edit_grid_w and 0 <= y < self.edit_grid_h): continue
+                if self.edit_grid[y][x] != fill: continue
+                self.edit_grid[y][x] = target
+                for dx, dy in ((1,0),(-1,0),(0,1),(0,-1)):
+                    nx, ny = x+dx, y+dy
+                    if 0 <= nx < self.edit_grid_w and 0 <= ny < self.edit_grid_h:
+                        if (nx,ny) not in visited and self.edit_grid[ny][nx] == fill:
+                            visited.add((nx,ny)); q.append((nx,ny))
+        else:
+            gx, gy, old_color = item
+            self.redo_stack.append((gx, gy, self.edit_grid[gy][gx]))
+            self.edit_grid[gy][gx] = old_color
         self.draw_edit_grid()
 
     def editor_redo(self):
-        if not self.redo_stack:
-            return
-        grid_x, grid_y, new_color = self.redo_stack.pop()
-        self.undo_stack.append((grid_x, grid_y, self.edit_grid[grid_y][grid_x]))
-        self.edit_grid[grid_y][grid_x] = new_color
+        if not self.redo_stack: return
+        gx, gy, new_color = self.redo_stack.pop()
+        self.undo_stack.append((gx, gy, self.edit_grid[gy][gx]))
+        self.edit_grid[gy][gx] = new_color
+        self.draw_edit_grid()
+
+    def edit_pixel_at(self, gx, gy):
+        if not (0 <= gx < self.edit_grid_w and 0 <= gy < self.edit_grid_h): return
+        if not self.undo_stack or self.undo_stack[-1] != (gx, gy, self.edit_grid[gy][gx]):
+            self.undo_stack.append((gx, gy, self.edit_grid[gy][gx])); self.redo_stack.clear()
+        color = (128,128,128) if self.edit_tool == "橡皮" else self.current_color
+        self.edit_grid[gy][gx] = color
         self.draw_edit_grid()
 
     def save_editor(self):
-        if self.edit_grid_w == 0 or self.edit_grid_h == 0:
-            return
+        if self.edit_grid_w == 0 or self.edit_grid_h == 0: return
         small_img = Image.new('RGB', (self.edit_grid_w, self.edit_grid_h))
         pixels = small_img.load()
         for y in range(self.edit_grid_h):
             for x in range(self.edit_grid_w):
-                pixels[x, y] = self.edit_grid[y][x]
-
+                pixels[x,y] = self.edit_grid[y][x]
         if self.result_image:
-            w, h = self.result_image.size
-            new_result = small_img.resize((w, h), Image.NEAREST)
+            w,h = self.result_image.size
+            new_result = small_img.resize((w,h), Image.NEAREST)
             if self.result_image.mode == 'RGBA':
-                r, g, b = new_result.split()
-                _, _, _, a = self.result_image.split()
-                new_result = Image.merge('RGBA', (r, g, b, a))
+                r,g,b = new_result.split()
+                _,_,_,a = self.result_image.split()
+                new_result = Image.merge('RGBA', (r,g,b,a))
             self.result_image = new_result
-            self.show_image(new_result, self.res_canvas)
+            self.show_image(new_result, "res")
             self.update_status("✅ 编辑已应用")
-
         self.edit_window.destroy()
         self.edit_window = None
 
-    # ========== 保存图片（支持 BMP） ==========
-    def save_image(self):
-        if self.result_image is None:
-            return
-        path = filedialog.asksaveasfilename(
-            defaultextension=".png",
-            filetypes=[
-                ("PNG图片", "*.png"),
-                ("JPEG图片", "*.jpg"),
-                ("BMP图片", "*.bmp")
-            ]
-        )
-        if path:
-            try:
-                self.result_image.save(path)
-                self.update_status(f"✅ 已保存：{os.path.basename(path)}")
-            except Exception as e:
-                messagebox.showerror("保存错误", str(e))
+    # ========== 帮助 ==========
+    def show_help(self):
+        messagebox.showinfo("使用说明",
+            "📖 PixelCraft v1.5 使用说明\n\n"
+            "1. 点击「选择图片」或拖拽图片到窗口\n"
+            "2. 调整「块大小」控制像素颗粒感\n"
+            "3. 调整「颜色数」或选择「色盘」控制色彩\n"
+            "4. 点击「编辑像素画」进入编辑器\n"
+            "   🖊️ 画笔：点击修改颜色\n"
+            "   🧹 橡皮：擦除像素\n"
+            "   🔲 框选：拖拽选中多个像素\n"
+            "   🪣 填充：点击区域自动填充颜色\n"
+            "   💉 吸管：拾取像素颜色\n"
+            "5. 点击「对比视图」左右对比原图和像素画\n"
+            "6. 点击「保存像素画」导出为 PNG/JPG/BMP\n"
+            "7. 点击「导出 SVG」生成矢量图\n"
+            "8. 点击「导出 CSS」生成像素画 HTML/CSS\n\n"
+            "💡 鼠标滚轮可缩放图片，双击恢复")
+    def show_about(self):
+        messagebox.showinfo("关于 PixelCraft",
+            "🎨 PixelCraft v1.5\n\n将任意图片转换为像素画的桌面工具。\n\n"
+            "新增功能：\n  🪣 填充工具\n  💉 吸管工具\n  🔍 对比视图\n  📊 批量进度条\n  🎨 导出 CSS\n\n"
+            "作者: Grass114\n许可: MIT License\nGitHub: https://github.com/Grass114/PixelCraft")
 
     # ========== 配置 ==========
     def load_config(self):
-        config_path = os.path.join(os.path.dirname(__file__), "pixelcraft_config.json")
-        if os.path.exists(config_path):
+        path = os.path.join(os.path.dirname(__file__), "pixelcraft_config.json")
+        if os.path.exists(path):
             try:
-                with open(config_path, 'r') as f:
-                    config = json.load(f)
-                self.block_var.set(config.get("block_size", 12))
-                self.color_var.set(config.get("colors", 16))
+                with open(path,'r') as f:
+                    cfg = json.load(f)
+                self.block_var.set(cfg.get("block_size",12))
+                self.color_var.set(cfg.get("colors",16))
                 self.block_label.config(text=str(self.block_var.get()))
                 self.color_label.config(text=str(self.color_var.get()))
-            except:
-                pass
+            except: pass
 
     def save_config(self):
-        config = {
-            "block_size": self.block_var.get(),
-            "colors": self.color_var.get(),
-        }
         try:
-            config_path = os.path.join(os.path.dirname(__file__), "pixelcraft_config.json")
-            with open(config_path, 'w') as f:
-                json.dump(config, f)
-        except:
-            pass
+            with open(os.path.join(os.path.dirname(__file__), "pixelcraft_config.json"),'w') as f:
+                json.dump({"block_size":self.block_var.get(), "colors":self.color_var.get()}, f)
+        except: pass
 
     def update_status(self, msg):
         self.status.config(text=msg)
 
 
-# ========== 启动 ==========
 if __name__ == "__main__":
     if HAS_DND:
         root = TkinterDnD.Tk()
