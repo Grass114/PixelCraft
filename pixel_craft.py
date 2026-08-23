@@ -2,7 +2,12 @@
 from tkinter import ttk, filedialog, messagebox, colorchooser
 from PIL import Image, ImageDraw, ImageTk
 import os
+import threading
 import json
+import subprocess
+import platform
+import tkinter.font as tkFont
+from collections import Counter
 
 # 尝试导入拖拽支持
 try:
@@ -74,6 +79,12 @@ class PixelCraft:
         self.current_color = (255, 0, 0)
         self.edit_tool = "brush"
 
+        # ========== Linux 字体检测（缺字体弹窗提示） ==========
+        self.check_linux_fonts()
+
+        # ========== Linux 强制指定中文字体 ==========
+        self._setup_linux_font()
+
         # 拖拽支持
         if HAS_DND and isinstance(root, TkinterDnD.Tk):
             root.drop_target_register('DND_Files')
@@ -81,6 +92,73 @@ class PixelCraft:
 
         self.setup_ui()
         self.update_status("拖拽图片或点击「选择图片」开始")
+
+    # ========== Linux 字体检测 ==========
+    def check_linux_fonts(self):
+        """检测 Linux 系统是否安装中文字体，缺失则弹窗提示"""
+        if platform.system() != "Linux":
+            return
+
+        try:
+            result = subprocess.run(
+                ["fc-list", ":lang=zh"],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            if not result.stdout.strip():
+                messagebox.showwarning(
+                    "字体缺失",
+                    "检测到系统缺少中文字体，界面可能显示为方块。\n\n"
+                    "请运行以下命令安装中文字体：\n"
+                    "sudo apt install fonts-noto-cjk fonts-wqy-microhei\n\n"
+                    "安装后重新启动程序即可正常显示。"
+                )
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            pass
+
+    # ========== Linux 强制指定中文字体 ==========
+    def _setup_linux_font(self):
+        """强制 Linux 系统使用中文字体"""
+        if platform.system() != "Linux":
+            return
+
+        # 常见中文字体候选列表
+        font_candidates = [
+            "Noto Sans CJK SC",
+            "Noto Sans CJK TC",
+            "WenQuanYi Micro Hei",
+            "WenQuanYi Zen Hei",
+            "Droid Sans Fallback",
+            "Source Han Sans SC",
+            "Source Han Sans CN",
+        ]
+
+        for font_name in font_candidates:
+            try:
+                # 验证字体是否存在
+                result = subprocess.run(
+                    ["fc-list", f":family={font_name}"],
+                    capture_output=True,
+                    text=True,
+                    timeout=3
+                )
+                if result.stdout.strip():
+                    # 设置 Tkinter 默认字体
+                    default_font = tkFont.nametofont("TkDefaultFont")
+                    default_font.configure(family=font_name, size=10)
+                    print(f"✅ Linux 字体已设置为: {font_name}")
+                    return
+            except Exception:
+                continue
+
+        # 如果没找到任何中文字体，尝试使用 sans-serif
+        try:
+            default_font = tkFont.nametofont("TkDefaultFont")
+            default_font.configure(family="sans-serif", size=10)
+            print("⚠️ 未找到中文字体，使用 sans-serif 作为备用")
+        except Exception:
+            pass
 
     # ========== UI 布局 ==========
     def setup_ui(self):
@@ -130,6 +208,7 @@ class PixelCraft:
         self.block_scale = tk.Scale(param, from_=2, to=40, orient=tk.HORIZONTAL,
                                     variable=self.block_var, length=100, showvalue=0)
         self.block_scale.pack(side=tk.LEFT, padx=(0, 5))
+        self.block_scale.bind("<MouseWheel>", lambda e: self.on_scale_wheel(e, self.block_scale, self.block_var, self.block_label, self.on_block_changed))
         self.block_label = tk.Label(param, text="12", width=3)
         self.block_label.pack(side=tk.LEFT, padx=(0, 10))
         self.block_scale.config(command=lambda v: (self.block_label.config(text=v), self.on_block_changed()))
@@ -139,6 +218,7 @@ class PixelCraft:
         self.color_scale = tk.Scale(param, from_=2, to=64, orient=tk.HORIZONTAL,
                                     variable=self.color_var, length=100, showvalue=0)
         self.color_scale.pack(side=tk.LEFT, padx=(0, 5))
+        self.color_scale.bind("<MouseWheel>", lambda e: self.on_scale_wheel(e, self.color_scale, self.color_var, self.color_label, self.on_block_changed))
         self.color_label = tk.Label(param, text="16", width=3)
         self.color_label.pack(side=tk.LEFT, padx=(0, 10))
         self.color_scale.config(command=lambda v: (self.color_label.config(text=v), self.on_block_changed()))
@@ -194,6 +274,22 @@ class PixelCraft:
         self.status.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(10, 0))
 
         self.load_config()
+
+    # ========== 滑块滚轮支持 ==========
+    def on_scale_wheel(self, event, scale_widget, var, label, callback):
+        """滑块滚轮滚动处理"""
+        delta = 1 if event.delta > 0 else -1
+        new_val = var.get() + delta
+        from_val = int(scale_widget.cget("from"))
+        to_val = int(scale_widget.cget("to"))
+        if new_val < from_val:
+            new_val = from_val
+        if new_val > to_val:
+            new_val = to_val
+        var.set(new_val)
+        label.config(text=str(new_val))
+        callback()
+        return "break"
 
     # ========== 缩放功能 ==========
     def on_mousewheel(self, event):
@@ -461,7 +557,7 @@ class PixelCraft:
         except Exception as e:
             messagebox.showerror("转换错误", str(e))
 
-    # ========== 显示图片（支持缩放） ==========
+    # ========== 显示图片 ==========
     def show_image(self, pil_img, canvas):
         if pil_img is None:
             return
@@ -678,13 +774,17 @@ class PixelCraft:
         self.edit_window.destroy()
         self.edit_window = None
 
-    # ========== 保存图片 ==========
+    # ========== 保存图片（支持 BMP） ==========
     def save_image(self):
         if self.result_image is None:
             return
         path = filedialog.asksaveasfilename(
             defaultextension=".png",
-            filetypes=[("PNG图片", "*.png"), ("JPEG图片", "*.jpg")]
+            filetypes=[
+                ("PNG图片", "*.png"),
+                ("JPEG图片", "*.jpg"),
+                ("BMP图片", "*.bmp")
+            ]
         )
         if path:
             try:

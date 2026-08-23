@@ -14,15 +14,15 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: ¼ì³ö´úÂë
+      - name: æ£€å‡ºä»£ç 
         uses: actions/checkout@v4
 
-      - name: ÉèÖÃ Python
+      - name: è®¾ç½® Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: »º´æ buildozer ÒÀÀµ
+      - name: ç¼“å­˜ buildozer ä¾èµ–
         uses: actions/cache@v4
         with:
           path: ~/.buildozer
@@ -30,7 +30,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-buildozer-
 
-      - name: °²×°ÏµÍ³ÒÀÀµ
+      - name: å®‰è£…ç³»ç»Ÿä¾èµ–
         run: |
           sudo apt update
           sudo apt install -y git zip unzip openjdk-17-jdk \
@@ -38,22 +38,22 @@ jobs:
             libncurses5-dev libncursesw5-dev cmake \
             libffi-dev libssl-dev
 
-      - name: °²×° buildozer ºÍ cython
+      - name: å®‰è£… buildozer å’Œ cython
         run: |
           pip3 install --user buildozer cython
           echo "$HOME/.local/bin" >> $GITHUB_PATH
 
-      - name: ¹¹½¨ APK
+      - name: æž„å»º APK
         run: |
           buildozer android debug
 
-      - name: ÉÏ´« APK£¨¹¹½¨²úÎï£©
+      - name: ä¸Šä¼  APKï¼ˆæž„å»ºäº§ç‰©ï¼‰
         uses: actions/upload-artifact@v4
         with:
           name: PixelCraft-Android
           path: bin/*.apk
 
-      - name: ÉÏ´«µ½ Release£¨Èç¹û´òÁË tag£©
+      - name: ä¸Šä¼ åˆ° Releaseï¼ˆå¦‚æžœæ‰“äº† tagï¼‰
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
