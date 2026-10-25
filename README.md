@@ -31,8 +31,13 @@ cd PixelCraft
 pip install -r requirements.txt
 ```
 ### 3.运行程序
+- Windows
 ```bash
-python src/pixel_craft.py
+python Windows-src/pixel_craft.py
+```
+- Linux / MacOS
+```bash
+python Linux-src/pixel_craft.py
 ```
 
 -注：如果 tkinterdnd2 安装失败，程序会自动降级运行（仅失去拖拽功能，其他正常）。
@@ -41,12 +46,12 @@ python src/pixel_craft.py
 - Windows
 ```bash
 pip install pyinstaller
-pyinstaller --onefile --windowed --collect-all tkinterdnd2 --name PixelCraft src/pixel_craft.py
+pyinstaller --onefile --windowed --collect-all tkinterdnd2 --name PixelCraft Windows-src/pixel_craft.py
 ```
 - Linux / macOS
 ```bash
 pip install pyinstaller
-pyinstaller --onefile --name PixelCraft src/pixel_craft.py
+pyinstaller --onefile --name PixelCraft Linux-src/pixel_craft.py
 ```
 打包后的文件在 dist 文件夹中，双击即可运行。
 
