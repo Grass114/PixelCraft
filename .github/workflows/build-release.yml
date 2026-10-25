@@ -4,7 +4,7 @@ on:
   push:
     tags:
       - 'v*'
-  workflow_dispatch:
+  workflow_dispatch: # 支持网页手动触发
 
 permissions:
   contents: write
@@ -32,9 +32,16 @@ jobs:
           pip install pyinstaller pillow tkinterdnd2
 
       - name: Build with PyInstaller
-        # 下面这行千万不要加 ^，直接在一行写完
         run: pyinstaller --onefile --windowed --name PixelCraft_x86 --hidden-import=PIL._tkinter_finder --hidden-import=PIL._imagingtk pixel_craft.py
 
+      # 新增：每次运行都会保存到 Artifacts，可直接下载
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PixelCraft_x86
+          path: Windows-src/dist/PixelCraft_x86.exe
+
+      # 原有的：打 Tag 时自动发布到 Release
       - name: Upload to Release
         uses: softprops/action-gh-release@v2
         if: github.ref_type == 'tag'
