@@ -4,7 +4,7 @@ on:
   push:
     tags:
       - 'v*'
-  workflow_dispatch:
+  workflow_dispatch: # 支持在网页 Actions 页面手动点击运行
 
 permissions:
   contents: write
@@ -14,22 +14,23 @@ jobs:
     runs-on: windows-latest
     defaults:
       run:
-        working-directory: ./Windows-src # 核心：让所有 run 命令都在 Windows-src 下执行
+        working-directory: ./Windows-src # 指定工作目录
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Python 3.8 (x86)
+      - name: Set up Python 3.12 (x86)
         uses: actions/setup-python@v5
         with:
-          python-version: '3.8'
-          architecture: 'x86'
+          python-version: '3.12' # 更新为 3.12
+          architecture: 'x86'    # 坚持 32 位架构
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pyinstaller pillow tkinterdnd2
+          # 指定安装较新版本的 Pillow，确保在 3.12 下能拉到 x86 的预编译 whl 包
+          pip install pyinstaller "pillow>=10.1.0" tkinterdnd2
 
       - name: Build with PyInstaller
         run: |
@@ -42,6 +43,5 @@ jobs:
         uses: softprops/action-gh-release@v2
         if: github.ref_type == 'tag'
         with:
-          # 因为前面指定了工作目录，产物会生成在 Windows-src/dist/ 下
           files: Windows-src/dist/PixelCraft_x86.exe
           generate_release_notes: true
